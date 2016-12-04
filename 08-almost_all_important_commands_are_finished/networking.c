@@ -65,6 +65,8 @@ void _addReplyStringToList(redisClient *c, char *s, size_t len) {
 			c->reply_bytes += getStringObjectSdsUsedMemory(o);
 		}
 	}
+	/* 防止因为加的内容太多,导致出错,但是实际上,在这个版本的代码里,下面的函数调用没有什么用处 */
+	asyncCloseClientOnOutputBufferLimitReached(c);
 }
 
 /*
@@ -229,6 +231,10 @@ void _addReplyObjectToList(redisClient *c, robj *o) {
 			c->reply_bytes += getStringObjectSdsUsedMemory(o);
 		}
 	}
+	/* 检查回复缓冲区的大小，如果超过系统限制的话，那么关闭客户端
+	* 不过在这个版本的代码里,起不到作用.
+	*/
+	asyncCloseClientOnOutputBufferLimitReached(c);
 }
 
 /*
@@ -339,6 +345,7 @@ redisClient *createClient(int fd) {
 
 	c->reply = listCreate(); /* 回复链表 */
 	c->reply_bytes = 0; /*  回复链表的字节量 */
+	c->flags = 0; /* 设置参数 */
 
 	listSetFreeMethod(c->reply, decrRefCountVoid);
 	listSetDupMethod(c->reply, dupClientReplyValue);
@@ -801,6 +808,7 @@ void setDeferredMultiBulkLength(redisClient *c, void *node, long length) {
 			listDelNode(c->reply, ln->next);
 		}
 	}
+	asyncCloseClientOnOutputBufferLimitReached(c);
 }
 
 /*
@@ -832,5 +840,61 @@ void addReplyDouble(redisClient *c, double d) {
 		dlen = snprintf(dbuf, sizeof(dbuf), "%.17g", d);
 		slen = snprintf(sbuf, sizeof(sbuf), "$%d\r\n%s\r\n", dlen, dbuf);
 		addReplyString(c, sbuf, slen);
+	}
+}
+
+/* 异步地释放给定的客户端
+ * 所谓异步,指的是不是立刻释放,而是稍后再释放
+ */
+void freeClientAsync(redisClient *c) {
+	if (c->flags & REDIS_CLOSE_ASAP) return;
+	c->flags |= REDIS_CLOSE_ASAP;
+	listAddNodeTail(server.clients_to_close, c);
+}
+
+/* 关闭需要异步关闭的客户端 */
+void freeClientsInAsyncFreeQueue(void) {
+	/* 遍历所有要关闭的客户端 */
+	while (listLength(server.clients_to_close)) {
+		listNode *ln = listFirst(server.clients_to_close);
+		redisClient *c = listNodeValue(ln);
+		c->flags &= ~REDIS_CLOSE_ASAP;
+		/* 关闭客户端 */
+		freeClient(c);
+		/* 从客户端链表中删除被关闭的客户端 */
+		listDelNode(server.clients_to_close, ln);
+	}
+}
+
+/* 
+* 这个函数检查客户端是否达到了输出缓冲区的软性（soft）限制或者硬性（hard）限制，
+* 并在到达软限制时，对客户端进行标记。
+*
+* 返回值：到达软性限制或者硬性限制时，返回非 0 值。
+*         否则返回 0 。
+*/
+int checkClientOutputBufferLimits(redisClient *c) {
+	// todo
+	return 0;
+}
+
+/* 
+* 如果客户端达到缓冲区大小的软性或者硬性限制，那么打开客户端的 ``REDIS_CLOSE_ASAP`` 状态，
+* 让服务器异步地关闭客户端。
+*
+* 注意：
+* 我们不能直接关闭客户端，而要异步关闭的原因是客户端正处于一个不能被安全地关闭的上下文中。
+* 比如说，可能有底层函数正在推入数据到客户端的输出缓冲区里面。
+*/
+void asyncCloseClientOnOutputBufferLimitReached(redisClient *c) {
+	assert(c->reply_bytes < ULONG_MAX - (1024 * 64));
+
+	/* 已经被标记了 */
+	if (c->reply_bytes == 0 || c->flags & REDIS_CLOSE_ASAP) return;
+
+	/* 检查限制 */
+	if (checkClientOutputBufferLimits(c)) {
+		/* 异步关闭 */
+		freeClientAsync(c);
 	}
 }

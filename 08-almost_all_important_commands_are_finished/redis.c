@@ -209,6 +209,15 @@ dictType dbDictType = {
 	dictRedisObjectDestructor   /* val destructor */
 };
 
+/* Db->expires */
+dictType keyptrDictType = {
+	dictSdsHash,               /* hash function */
+	NULL,                      /* key dup */
+	NULL,                      /* val dup */
+	dictSdsKeyCompare,         /* key compare */
+	NULL,                      /* key destructor */
+	NULL                       /* val destructor */
+};
 
 
 unsigned int dictEncObjHash(const void *key) {
@@ -600,21 +609,10 @@ void freeClient(redisClient *c) {
 }
 /* ======================= Cron: called every 100 ms ======================== */
 
-/* Helper function for the activeExpireCycle() function.
-* This function will try to expire the key that is stored in the hash table
-* entry 'de' of the 'expires' hash table of a Redis database.
-*
+/* 
 * activeExpireCycle() 函数使用的检查键是否过期的辅佐函数。
 *
-* If the key is found to be expired, it is removed from the database and
-* 1 is returned. Otherwise no operation is performed and 0 is returned.
-*
 * 如果 de 中的键已经过期，那么移除它，并返回 1 ，否则不做动作，并返回 0 。
-*
-* When a key is expired, server.stat_expiredkeys is incremented.
-*
-* The parameter 'now' is the current time in milliseconds as is passed
-* to the function to avoid too many gettimeofday() syscalls.
 *
 * 参数 now 是毫秒格式的当前时间
 */
@@ -813,9 +811,10 @@ void clientsCron(void) {
 	}
 }
 
+
+
 int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
 	/* 会以一定的频率来运行这个函数 */
-
 	int j;
 	updateCachedTime();
 	/* 服务器进程收到 SIGTERM 消息,关闭服务器 */
@@ -828,6 +827,9 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
 	/* 检查客户端,关闭超时的客户端,并释放客户端多余的缓冲区 */
 	clientsCron();
 	databasesCron(); /* 对数据库执行各种操作 */
+
+	/* 关闭那些需要异步关闭的客户端 */
+	freeClientsInAsyncFreeQueue();
 	return 1000000 / server.hz; /* 这个返回的值决定了下次什么时候再调用这个函数 */
 }
 void acceptTcpHandler(aeEventLoop *el, int fd, void *privdata, int mask);
@@ -857,6 +859,7 @@ void initServer() {
 	
 	for (j = 0; j < server.dbnum; j++) {
 		server.db[j].dict = dictCreate(&dbDictType, NULL);
+		server.db[j].expires = dictCreate(&keyptrDictType, NULL);
 		server.db[j].id = j;
 	}
 

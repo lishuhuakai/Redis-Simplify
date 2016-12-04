@@ -119,6 +119,9 @@
 #define ZSKIPLIST_MAXLEVEL 32 /* Should be enough for 2^32 elements */
 #define ZSKIPLIST_P 0.25      /* Skiplist P = 1/4 */
 
+/* Client flags */
+#define REDIS_CLOSE_ASAP (1<<10)/* Close this client ASAP */
+
 /* Sets operations codes */
 #define REDIS_OP_UNION 0
 #define REDIS_OP_DIFF 1
@@ -187,6 +190,8 @@ typedef struct redisClient {
 	char buf[REDIS_REPLY_CHUNK_BYTES];
 
 	time_t lastinteraction; /* 客户端最后一次和服务器互动的时间 */
+	/* 客户端状态标志 */
+	int flags;              /* REDIS_SLAVE | REDIS_MONITOR | REDIS_MULTI ... */
 
 } redisClient;
 
