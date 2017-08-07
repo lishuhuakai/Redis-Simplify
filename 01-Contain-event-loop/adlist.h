@@ -3,9 +3,9 @@
 
 /* Node, List, and Iterator are the only data structures used currently. */
 
-/*
-* 双端链表节点
-*/
+//
+// listNode 双端链表节点
+//
 typedef struct listNode {
 
 	// 前置节点
@@ -19,12 +19,12 @@ typedef struct listNode {
 
 } listNode;
 
-/*
-* 双端链表迭代器
-*/
-typedef struct listIter { // 这个迭代器是用来干什么用的.
+//
+// listIter 双端链表迭代器
+//
+typedef struct listIter {
 
-						  // 当前迭代到的节点
+	// 当前迭代到的节点
 	listNode *next;
 
 	// 迭代的方向
@@ -32,12 +32,12 @@ typedef struct listIter { // 这个迭代器是用来干什么用的.
 
 } listIter;
 
-/*
-* 双端链表结构
-*/
-typedef struct list { // 这些东西其实非常像类,是吧.
+//
+// list 双端链表
+//
+typedef struct list { // 在c语言中,用结构体的方式来模拟对象是一种常见的手法
 
-					  // 表头节点
+	// 表头节点
 	listNode *head;
 
 	// 表尾节点
@@ -58,42 +58,52 @@ typedef struct list { // 这些东西其实非常像类,是吧.
 } list;
 
 /* Functions implemented as macros */
-// 返回给定链表所包含的节点数量
+
+// listLength 返回给定链表所包含的节点数量
 // T = O(1)
 #define listLength(l) ((l)->len)
-// 返回给定链表的表头节点
+
+// listFirst 返回给定链表的表头节点
 // T = O(1)
 #define listFirst(l) ((l)->head)
-// 返回给定链表的表尾节点
+
+// listLast 返回给定链表的表尾节点
 // T = O(1)
 #define listLast(l) ((l)->tail)
-// 返回给定节点的前置节点
+
+// listPrevNode 返回给定节点的前置节点
 // T = O(1)
 #define listPrevNode(n) ((n)->prev)
-// 返回给定节点的后置节点
+
+// listNextNode 返回给定节点的后置节点
 // T = O(1)
 #define listNextNode(n) ((n)->next)
-// 返回给定节点的值
+
+// listNodeValue 返回给定节点的值
 // T = O(1)
 #define listNodeValue(n) ((n)->value)
 
-// 将链表 l 的值复制函数设置为 m
+// listSetDupMethod 将链表 l 的值复制函数设置为 m
 // T = O(1)
 #define listSetDupMethod(l,m) ((l)->dup = (m))
-// 将链表 l 的值释放函数设置为 m
+
+// listSetFreeMethod 将链表 l 的值释放函数设置为 m
 // T = O(1)
 #define listSetFreeMethod(l,m) ((l)->free = (m))
-// 将链表的对比函数设置为 m
+
+// listSetMatchMethod 将链表的对比函数设置为 m
 // T = O(1)
 #define listSetMatchMethod(l,m) ((l)->match = (m))
 
-// 返回给定链表的值复制函数
-// T = O(1)
+// listGetDupMethod 返回给定链表的值复制函数
+// T = O(1) 
 #define listGetDupMethod(l) ((l)->dup)
-// 返回给定链表的值释放函数
+
+// listGetFree返回给定链表的值释放函数
 // T = O(1)
 #define listGetFree(l) ((l)->free)
-// 返回给定链表的值对比函数
+
+// listGetMatchMethod 返回给定链表的值对比函数
 // T = O(1)
 #define listGetMatchMethod(l) ((l)->match)
 
@@ -114,10 +124,7 @@ void listRewind(list *list, listIter *li);
 void listRewindTail(list *list, listIter *li);
 void listRotate(list *list);
 
-/* Directions for iterators
-*
-* 迭代器进行迭代的方向
-*/
+/* Directions for iterators -- 迭代器进行迭代的方向 */
 // 从表头向表尾进行迭代
 #define AL_START_HEAD 0
 // 从表尾到表头进行迭代

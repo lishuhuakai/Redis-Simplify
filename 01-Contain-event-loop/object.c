@@ -1,14 +1,15 @@
 /* Redis Object implementation. */
-
-#include "redis.h"
+#include "object.h"
+#include <unistd.h>
 #include <math.h>
 #include <ctype.h>
 
-robj *createObject(int type, void *ptr);
 
-/* 创建一个 REDIS_ENCODING_EMBSTR 编码的字符对象
+/* 
+ * 创建一个 REDIS_ENCODING_EMBSTR 编码的字符对象
  * 这个字符串对象中的 sds 会和字符串对象的 redisObject 结构一起分配
- * 因此这个字符也是不可修改的 */
+ * 因此这个字符也是不可修改的 
+ */
 robj *createEmbeddedStringObject(char *ptr, size_t len) {
 	robj *o = zmalloc(sizeof(robj) + sizeof(struct sdshdr) + len + 1);
 	struct sdshdr *sh = (void*)(o + 1);
@@ -31,8 +32,10 @@ robj *createEmbeddedStringObject(char *ptr, size_t len) {
 	return o;
 }
 
-/* 创建一个 REDIS_ENCODING_RAW 编码的字符对象
- * 对象的指针指向一个 sds 结构 */
+/* 
+ * 创建一个 REDIS_ENCODING_RAW 编码的字符对象
+ * 对象的指针指向一个 sds 结构 
+ */
 robj *createRawStringObject(char *ptr, size_t len) {
 	return createObject(REDIS_STRING, sdsnewlen(ptr, len));
 }
@@ -52,8 +55,8 @@ robj *createStringObject(char *ptr, size_t len) {
 }
 
 /*
-* 创建一个新 robj 对象
-*/
+ * 创建一个新 robj 对象
+ */
 robj *createObject(int type, void *ptr) {
 
 	robj *o = zmalloc(sizeof(*o));
@@ -70,8 +73,8 @@ robj *createObject(int type, void *ptr) {
 
 
 /*
-* 释放字符串对象
-*/
+ * 释放字符串对象
+ */
 void freeStringObject(robj *o) {
 	if (o->encoding == REDIS_ENCODING_RAW) {
 		sdsfree(o->ptr);
@@ -79,10 +82,10 @@ void freeStringObject(robj *o) {
 }
 
 /*
-* 为对象的引用计数减一
-*
-* 当对象的引用计数降为 0 时，释放对象。
-*/
+ * 为对象的引用计数减一
+ *
+ * 当对象的引用计数降为 0 时，释放对象。
+ */
 void decrRefCount(robj *o) {
 
 	//if (o->refcount <= 0) redisPanic("decrRefCount against refcount <= 0");
@@ -109,25 +112,25 @@ void decrRefCount(robj *o) {
 }
 
 /* This variant of decrRefCount() gets its argument as void, and is useful
-* as free method in data structures that expect a 'void free_object(void*)'
-* prototype for the free method.
-*
-* 作用于特定数据结构的释放函数包装
-*/
+ * as free method in data structures that expect a 'void free_object(void*)'
+ * prototype for the free method.
+ *
+ * 作用于特定数据结构的释放函数包装
+ */
 void decrRefCountVoid(void *o) {
 	decrRefCount(o);
 }
 
 /*
-* 为对象的引用计数增一
-*/
+ * 为对象的引用计数增一
+ */
 void incrRefCount(robj *o) {
 	o->refcount++;
 }
 
 /*
-* 回复内容复制函数
-*/
+ * 回复内容复制函数
+ */
 void *dupClientReplyValue(void *o) {
 	incrRefCount((robj*)o);
 	return o;

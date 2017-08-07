@@ -19,6 +19,7 @@
 #include <sys/resource.h>
 #include <sys/utsname.h>
 #include <locale.h>
+
 /*=============================== Function declariton =======================*/
 void setCommand(redisClient *c);
 void getCommand(redisClient *c);
@@ -27,7 +28,7 @@ void getCommand(redisClient *c);
 /* Global vars */
 struct redisServer server; /* server global state */
 
-struct redisCommand redisCommandTable[] = { // 可以学习一下它的代码编写模式,确实非常漂亮
+struct redisCommand redisCommandTable[] = {
 	{ "get",getCommand,2,"r",0, NULL,1,1,1,0,0 },
 	{ "set",setCommand,-3,"wm",0,NULL,1,1,1,0,0 },
 };
@@ -42,8 +43,7 @@ unsigned int dictSdsCaseHash(const void *key) {
 }
 
 int dictSdsKeyCompare(void *privdata, const void *key1,
-	const void *key2) /* 比较两个键的值是否相等,值得一提的是,两个key应该是字符串对象 */
-{
+	const void *key2) { /* 比较两个键的值是否相等,值得一提的是,两个key应该是字符串对象 */
 	int l1, l2;
 
 	l1 = sdslen((sds)key1); /* 获得长度 */
@@ -53,14 +53,15 @@ int dictSdsKeyCompare(void *privdata, const void *key1,
 }
 
 /* A case insensitive version used for the command lookup table and other
-* places where case insensitive non binary-safe comparison is needed. */
+ * places where case insensitive non binary-safe comparison is needed. */
 int dictSdsKeyCaseCompare(void *privdata, const void *key1,
-	const void *key2)
-{
-	return strcasecmp(key1, key2) == 0; /* 应该是不区分大小 */ 
+	const void *key2) {
+	return strcasecmp(key1, key2) == 0; // 不区分大小写 
 }
-
-void dictSdsDestructor(void *privdata, void *val) { /* 设置析构函数 */
+ /* 
+  * 设置析构函数 
+  */
+void dictSdsDestructor(void *privdata, void *val) {
 	sdsfree(val);
 }
 
@@ -76,11 +77,9 @@ dictType commandTableDictType = {
 
 /*================================== Commands ================================ */
 
-/* Populates the Redis Command Table starting from the hard coded list
-* we have on top of redis.c file.
-*
-* 根据 redis.c 文件顶部的命令列表，创建命令表
-*/
+/*
+ * 根据 redis.c 文件顶部的命令列表，创建命令表
+ */
 void populateCommandTable(void) {
 	int j;
 
@@ -121,38 +120,36 @@ void populateCommandTable(void) {
 		// 将命令关联到命令表
 		retval1 = dictAdd(server.commands, sdsnew(c->name), c);
 
-		/* Populate an additional dictionary that will be unaffected
-		* by rename-command statements in redis.conf.
-		*
-		* 将命令也关联到原始命令表
-		*
-		* 原始命令表不会受 redis.conf 中命令改名的影响
-		*/
+		/*
+		 * 将命令也关联到原始命令表
+		 *
+		 * 原始命令表不会受 redis.conf 中命令改名的影响
+		 */
 		retval2 = dictAdd(server.orig_commands, sdsnew(c->name), c);
 	}
 }
 
 /*
-* 根据给定命令名字（SDS），查找命令
-*/
+ * 根据给定命令名字（SDS），查找命令
+ */
 struct redisCommand *lookupCommand(sds name) {
 	return dictFetchValue(server.commands, name);
 }
 
 void call(redisClient *c, int flags) {
-	c->cmd->proc(c); /* 执行实现函数 */
+	c->cmd->proc(c); // 执行实现函数
 }
 
 /*
-* 这个函数执行时，我们已经读入了一个完整的命令到客户端，
-* 这个函数负责执行这个命令，
-* 或者服务器准备从客户端中进行一次读取。
-* 如果这个函数返回 1 ，那么表示客户端在执行命令之后仍然存在，
-* 调用者可以继续执行其他操作。
-* 否则，如果这个函数返回 0 ，那么表示客户端已经被销毁。
-*/
+ * 这个函数执行时，我们已经读入了一个完整的命令到客户端，
+ * 这个函数负责执行这个命令，
+ * 或者服务器准备从客户端中进行一次读取。
+ * 如果这个函数返回 1 ，那么表示客户端在执行命令之后仍然存在，
+ * 调用者可以继续执行其他操作。
+ * 否则，如果这个函数返回 0 ，那么表示客户端已经被销毁。
+ */
 int processCommand(redisClient *c) {
-	/* 查找命令，并进行命令合法性检查，以及命令参数个数检查 */
+	// 查找命令，并进行命令合法性检查，以及命令参数个数检查 
 	c->cmd = c->lastcmd = lookupCommand(c->argv[0]->ptr);
 	call(c, REDIS_CALL_FULL);
 }
@@ -162,7 +159,10 @@ static void sigtermHandler(int sig) {
 	// todo
 }
 
-void setupSignalHandlers(void) { /* 设置信号处理函数 */
+/*
+ * 设置信号处理函数
+ */
+void setupSignalHandlers(void) {
 	struct sigaction act;
 	sigemptyset(&act.sa_mask);
 	act.sa_flags = 0;
@@ -171,12 +171,15 @@ void setupSignalHandlers(void) { /* 设置信号处理函数 */
 
 }
 
+/*
+ * 初始化服务器的配置信息
+ */
 void initServerConfig() {
 	int j;
 
 	// 服务器状态
 	server.hz = REDIS_DEFAULT_HZ;
-	server.port = REDIS_SERVERPORT;
+	server.port = REDIS_SERVERPORT; // 6379号端口监听
 	server.tcp_backlog = REDIS_TCP_BACKLOG;
 	server.bindaddr_count = 0;
 
@@ -186,26 +189,29 @@ void initServerConfig() {
 	server.tcpkeepalive = REDIS_DEFAULT_TCP_KEEPALIVE;
 	server.commands = dictCreate(&commandTableDictType, NULL);
 	server.orig_commands = dictCreate(&commandTableDictType, NULL);
-	populateCommandTable();  /* 安装命令处理函数 */
+	populateCommandTable();  // 安装命令处理函数
 }
 
+/*
+ * 在port端口监听
+ */
 int listenToPort(int port, int *fds, int *count) {
 	int j;
 
 	if (server.bindaddr_count == 0) server.bindaddr[0] = NULL;
 
 	for (j = 0; j < server.bindaddr_count || j == 0; j++) {
-		if (server.bindaddr[j] == NULL) { /* 原来的代码是,如果bindaddr[j] == NULL,那么就要绑定ipv4以及ipv6两种地址 */
-			// 好吧,这里我估计要做一些简化工作,那就是支持ipv4即可
+		if (server.bindaddr[j] == NULL) {
+			// 这里做了一些简化工作,那就是仅支持ipv4即可
 			fds[*count] = anetTcpServer(server.neterr, port, NULL, server.tcp_backlog);
 			if (fds[*count] != ANET_ERR) {
-				anetNonBlock(NULL, fds[*count]); /* 设置为非阻塞 */
+				anetNonBlock(NULL, fds[*count]); // 设置为非阻塞
 				(*count)++;
 			}
 			if (*count) break;
 		}
 		else {
-			/* Bind IPv4 address. */
+			// Bind IPv4 address.
 			fds[*count] = anetTcpServer(server.neterr, port, server.bindaddr[j],
 				server.tcp_backlog);
 		}
@@ -219,7 +225,10 @@ int listenToPort(int port, int *fds, int *count) {
 	return REDIS_OK;
 }
 
-long long ustime(void) { /* 返回当前时间的us秒表示 */
+/* 
+ * 返回当前时间的us秒表示
+ */
+long long ustime(void) { 
 	struct timeval tv;
 	long long ust;
 	gettimeofday(&tv, NULL);
@@ -239,15 +248,17 @@ void updateCachedTime(void) {
 
 /*================================== Shutdown =============================== */
 
-/* Close listening sockets. Also unlink the unix domain socket if
-* unlink_unix_socket is non-zero. */
+/* 
+ * Close listening sockets. Also unlink the unix domain socket if
+ * unlink_unix_socket is non-zero. 
+ */
 void closeListeningSockets(int unlink_unix_socket) {
 	int j;
 	for (j = 0; j < server.ipfd_count; j++) close(server.ipfd[j]);
 }
 
 int prepareForShutdown(int flags) {
-	/* 关闭监听套接字,这样在重启的时候会快一点 */
+	// 关闭监听套接字,这样在重启的时候会快一点
 	closeListeningSockets(1);
 	return REDIS_OK;
 }
@@ -258,17 +269,18 @@ void clientsCron(void) {
 
 int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
 	int j;
-	/* 服务器进程收到 SIGTERM 消息,关闭服务器 */
+	// 服务器进程收到 SIGTERM 消息,关闭服务器
 	if (server.shutdown_asap) {
-		/* 尝试关闭服务器 */
+		// 尝试关闭服务器
 		if (prepareForShutdown(0) == REDIS_OK) exit(0);
-		/* 运行到这里说明关闭失败 */
+		// 运行到这里说明关闭失败
 		server.shutdown_asap = 0;
 	}
-	/* 检查客户端,关闭超时的客户端,并释放客户端多余的缓冲区 */
+	// 检查客户端,关闭超时的客户端,并释放客户端多余的缓冲区
 	clientsCron();
-	return 1000000 / server.hz; /* 这个返回的值决定了下次什么时候再调用这个函数 */
+	return 1000000 / server.hz; // 这个返回的值决定了下次什么时候再调用这个函数
 }
+
 void acceptTcpHandler(aeEventLoop *el, int fd, void *privdata, int mask);
 
 
@@ -291,15 +303,14 @@ void initServer() {
 		exit(1);
 	}
 	
+	// ipfd_count 用于记录监听描述符的个数,一般而言,只有一个
 
-	/* 为serverCron() 创建时间事件 */
+	// 为serverCron() 创建定时事件
 	if (aeCreateTimeEvent(server.el, 1, serverCron, NULL, NULL) == AE_ERR) {
 		exit(1);
 	}
 
-
-
-	/* 为 TCP 连接关联应答(accept)处理器,用于接收并应答客户端的connect()调用*/
+	// 为 TCP 连接关联应答(accept)处理器,用于接收并应答客户端的connect()调用
 	for (j = 0; j < server.ipfd_count; j++) {
 		if (aeCreateFileEvent(server.el, server.ipfd[j], AE_READABLE,
 			acceptTcpHandler, NULL) == AE_ERR) {
@@ -313,9 +324,7 @@ void initServer() {
 int main(int argc, char **argv) {
 	initServerConfig();
 	initServer();
-	/* 运行事件处理器,一直到服务器关闭为止 */
+	// 运行事件处理器,一直到服务器关闭为止
 	aeMain(server.el);
-
 	return 0;
 }
-

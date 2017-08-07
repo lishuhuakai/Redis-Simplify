@@ -143,7 +143,6 @@ size_t zmalloc_used_memory(void) {
     size_t um;
 
     if (zmalloc_thread_safe) {
-
         pthread_mutex_lock(&used_memory_mutex);
         um = used_memory;
         pthread_mutex_unlock(&used_memory_mutex);
