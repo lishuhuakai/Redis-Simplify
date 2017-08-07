@@ -1,16 +1,17 @@
 /* Redis Object implementation. */
-
-#include "redis.h"
+#include "object.h"
+#include "util.h"
+#include "networking.h"
+#include <unistd.h>
 #include <math.h>
 #include <ctype.h>
 
-robj *createObject(int type, void *ptr);
-void addReplyError(redisClient *c, char *err);
-int string2l(const char *s, size_t slen, long *lval);
 
-/* 创建一个 REDIS_ENCODING_EMBSTR 编码的字符对象
+/* 
+ * 创建一个 REDIS_ENCODING_EMBSTR 编码的字符对象
  * 这个字符串对象中的 sds 会和字符串对象的 redisObject 结构一起分配
- * 因此这个字符也是不可修改的 */
+ * 因此这个字符也是不可修改的 
+ */
 robj *createEmbeddedStringObject(char *ptr, size_t len) {
 	robj *o = zmalloc(sizeof(robj) + sizeof(struct sdshdr) + len + 1);
 	struct sdshdr *sh = (void*)(o + 1);
@@ -33,8 +34,10 @@ robj *createEmbeddedStringObject(char *ptr, size_t len) {
 	return o;
 }
 
-/* 创建一个 REDIS_ENCODING_RAW 编码的字符对象
- * 对象的指针指向一个 sds 结构 */
+/* 
+ * 创建一个 REDIS_ENCODING_RAW 编码的字符对象
+ * 对象的指针指向一个 sds 结构 
+ */
 robj *createRawStringObject(char *ptr, size_t len) {
 	return createObject(REDIS_STRING, sdsnewlen(ptr, len));
 }
@@ -54,8 +57,8 @@ robj *createStringObject(char *ptr, size_t len) {
 }
 
 /*
-* 创建一个新 robj 对象
-*/
+ * 创建一个新 robj 对象
+ */
 robj *createObject(int type, void *ptr) {
 
 	robj *o = zmalloc(sizeof(*o));
@@ -72,8 +75,8 @@ robj *createObject(int type, void *ptr) {
 
 
 /*
-* 释放字符串对象
-*/
+ * 释放字符串对象
+ */
 void freeStringObject(robj *o) {
 	if (o->encoding == REDIS_ENCODING_RAW) {
 		sdsfree(o->ptr);
@@ -81,10 +84,10 @@ void freeStringObject(robj *o) {
 }
 
 /*
-* 为对象的引用计数减一
-*
-* 当对象的引用计数降为 0 时，释放对象。
-*/
+ * 为对象的引用计数减一
+ *
+ * 当对象的引用计数降为 0 时，释放对象。
+ */
 void decrRefCount(robj *o) {
 
 	//if (o->refcount <= 0) redisPanic("decrRefCount against refcount <= 0");
@@ -111,18 +114,18 @@ void decrRefCount(robj *o) {
 }
 
 /* This variant of decrRefCount() gets its argument as void, and is useful
-* as free method in data structures that expect a 'void free_object(void*)'
-* prototype for the free method.
-*
-* 作用于特定数据结构的释放函数包装
-*/
+ * as free method in data structures that expect a 'void free_object(void*)'
+ * prototype for the free method.
+ *
+ * 作用于特定数据结构的释放函数包装
+ */
 void decrRefCountVoid(void *o) {
 	decrRefCount(o);
 }
 
 /*
-* 为对象的引用计数增一
-*/
+ * 为对象的引用计数增一
+ */
 void incrRefCount(robj *o) {
 	o->refcount++;
 }
@@ -171,29 +174,28 @@ robj *dupStringObject(robj *o) {
 }
 
 /*
-* 尝试从对象 o 中取出整数值，
-* 或者尝试将对象 o 所保存的值转换为整数值，
-* 并将这个整数值保存到 *target 中。
-*
-* 如果 o 为 NULL ，那么将 *target 设为 0 。
-*
-* 如果对象 o 中的值不是整数，并且不能转换为整数，那么函数返回 REDIS_ERR 。
-*
-* 成功取出或者成功进行转换时，返回 REDIS_OK 。
-*
-* T = O(N)
-*/
+ * 尝试从对象 o 中取出整数值，
+ * 或者尝试将对象 o 所保存的值转换为整数值，
+ * 并将这个整数值保存到 *target 中。
+ *
+ * 如果 o 为 NULL ，那么将 *target 设为 0 。
+ *
+ * 如果对象 o 中的值不是整数，并且不能转换为整数，那么函数返回 REDIS_ERR 。
+ *
+ * 成功取出或者成功进行转换时，返回 REDIS_OK 。
+ *
+ * T = O(N)
+ */
 int getLongLongFromObject(robj *o, long long *target) {
 	long long value;
 	char *eptr;
 
 	if (o == NULL) {
-		/* o 为 NULL 时，将值设为 0. */
+		// o 为 NULL 时，将值设为 0.
 		value = 0;
 	}
 	else {
-
-		if (sdsEncodedObject(o)) {
+		if (sdsEncodedObject(o)) { // 如果o是字符类型的redisObject
 			errno = 0;
 			value = strtoll(o->ptr, &eptr, 10); /* 调用函数试图将string转换为long long */ 
 			if (isspace(((char*)o->ptr)[0]) || eptr[0] != '\0' ||
@@ -201,7 +203,7 @@ int getLongLongFromObject(robj *o, long long *target) {
 				return REDIS_ERR;
 		}
 		else if (o->encoding == REDIS_ENCODING_INT) {
-			/* 对于 REDIS_ENCODING_INT 编码的整数值,直接将它的值保存到 value 中 */
+			// 对于 REDIS_ENCODING_INT 编码的整数值,直接将它的值保存到 value 中
 			value = (long)o->ptr;
 		}
 		else {
@@ -216,22 +218,22 @@ int getLongLongFromObject(robj *o, long long *target) {
 
 
 /*
-* 尝试从对象 o 中取出整数值，
-* 或者尝试将对象 o 中的值转换为整数值，
-* 并将这个得出的整数值保存到 *target 。
-*
-* 如果取出/转换成功的话，返回 REDIS_OK 。
-* 否则，返回 REDIS_ERR ，并向客户端发送一条出错回复。
-*
-* T = O(N)
-*/
+ * 尝试从对象 o 中取出整数值，
+ * 或者尝试将对象 o 中的值转换为整数值，
+ * 并将这个得出的整数值保存到 *target 。
+ *
+ * 如果取出/转换成功的话，返回 REDIS_OK 。
+ * 否则，返回 REDIS_ERR ，并向客户端发送一条出错回复。
+ *
+ * T = O(N)
+ */
 int getLongLongFromObjectOrReply(redisClient *c, robj *o, long long *target, const char *msg) {
 
 	long long value;
 
 	if (getLongLongFromObject(o, &value) != REDIS_OK) {
 		if (msg != NULL) {
-			addReplyError(c, (char*)msg); /* 如果携带了msg,则向对方发送msg */
+			addReplyError(c, (char*)msg); // 如果携带了msg,则向对方发送msg
 		}
 		else {
 			addReplyError(c, "value is not an integer or out of range");
@@ -243,17 +245,19 @@ int getLongLongFromObjectOrReply(redisClient *c, robj *o, long long *target, con
 	return REDIS_OK;
 }
 
-/* 尝试对字符串对象进行编码,以节约内存 */
+/*
+ * 尝试对字符串对象进行编码,以节约内存 
+ */
 robj *tryObjectEncoding(robj *o) {
 	long value;
 	sds s = o->ptr;
 	size_t len;
-	/* 只有在字符串的编码为RAW或者EMBSTR时才尝试进行编码 */
+	// 只有在字符串的编码为RAW或者EMBSTR时才尝试进行编码
 	if (!sdsEncodedObject(o)) return o;
-	/* 不对共享的对象进行编码 */
+	// 不对共享的对象进行编码
 	if (o->refcount > 1) return o;
 
-	/* 对字符串进行检查,只对长度小于或者等于21字节,并且可以解释为整数的字符串进行编码 */
+	// 对字符串进行检查,只对长度小于或者等于21字节,并且可以解释为整数的字符串进行编码
 	len = sdslen(s);
 	if (len <= 21 && string2l(s, len, &value)) {
 		// 做了一点简化,为了不至于太复杂
@@ -262,12 +266,12 @@ robj *tryObjectEncoding(robj *o) {
 		o->ptr = (void *)value;
 		return o;
 	}
-	/* 字符串的长度没有超过embstr的限制 */
+	// 字符串的长度没有超过embstr的限制
 	if (len <= REDIS_ENCODING_EMBSTR_SIZE_LIMIT) {
 		robj *emb;
-		if (o->encoding == REDIS_ENCODING_EMBSTR) return o; /* 不做任何改变 */
+		if (o->encoding == REDIS_ENCODING_EMBSTR) return o; // 不做任何改变
 		emb = createEmbeddedStringObject(s, sdslen(s));
-		decrRefCount(o); /* 手动地操纵引用计数真是一个麻烦事 */ 
+		decrRefCount(o); // 手动地操纵引用计数真是一个麻烦事 
 		return emb;
 	}
 	return o;

@@ -1,14 +1,15 @@
-#include "redis.h"
-
+#include "networking.h"
+#include "db.h"
+#include "object.h"
 #include <signal.h>
 #include <ctype.h>
 
 /*
-* 从数据库db中取出键key的值(对象)
-* 如果key的值存在,那么返回该值,否则,返回NULL.
-*/
+ * 从数据库db中取出键key的值(对象)
+ * 如果key的值存在,那么返回该值,否则,返回NULL.
+ */
 robj *lookupKey(redisDb *db, robj *key) {
-	/* 查找键空间 */
+	// 查找键空间
 	char *str = key->ptr;
 	dictEntry *de = dictFind(db->dict, key->ptr);
 
@@ -21,13 +22,13 @@ robj *lookupKey(redisDb *db, robj *key) {
 }
 
 /*
-* 为执行读取操作而取出键key在数据库db中的值,并根据是否成功找到值,更新服务器中的命中
-* 或者不命中信息,找到时返回值对象,没有找到是返回NULL.
-*/
+ * 为执行读取操作而取出键key在数据库db中的值,并根据是否成功找到值,更新服务器中的命中
+ * 或者不命中信息,找到时返回值对象,没有找到是返回NULL.
+ */
 robj *lookupKeyRead(redisDb *db, robj *key) {
 	robj *val;
 	
-	/* 从数据库中取出键的值 */
+	// 从数据库中取出键的值
 	val = lookupKey(db, key);
 
 	// todo
@@ -35,24 +36,24 @@ robj *lookupKeyRead(redisDb *db, robj *key) {
 }
 
 /*
-* 为执行读取操作而从数据库中查找返回key的值.
-* 如果key存在,那么返回key的值对象,否则的话,向客户端发送Reply参数中的信息,并返回NULL.
-*/
+ * 为执行读取操作而从数据库中查找返回key的值.
+ * 如果key存在,那么返回key的值对象,否则的话,向客户端发送Reply参数中的信息,并返回NULL.
+ */
 robj *lookupKeyReadOrReply(redisClient *c, robj *key, robj *reply) {
-	/* 查找 */
+	// 查找
 	robj *o = lookupKeyRead(c->db, key);
 
-	/* 决定是否发送信息 */
+	// 决定是否发送信息
 	if (!o) addReply(c, reply);
 	return o;
 }
 
 /* 为执行写入操作而取出键 key 在数据库 db 中的值。
-* 和 lookupKeyRead 不同，这个函数不会更新服务器的命中/不命中信息。
-* 找到时返回值对象，没找到返回 NULL 。
-*/
+ * 和 lookupKeyRead 不同，这个函数不会更新服务器的命中/不命中信息。
+ * 找到时返回值对象，没找到返回 NULL 。
+ */
 robj* lookupKeyWrite(redisDb *db, robj *key) {
-	/* 删除过期键 */
+	//  删除过期键
 	return lookupKey(db, key);
 }
 
@@ -61,12 +62,12 @@ robj* lookupKeyWrite(redisDb *db, robj *key) {
  * 程序在键已经存在时会停止。
  */
 void dbAdd(redisDb *db, robj *key, robj *val) {
-	/* 复制键名 */
+	// 复制键名
 	sds copy = sdsdup(key->ptr);
-	/* 尝试添加键值对 */
+	// 尝试添加键值对
 	int retval = dictAdd(db->dict, copy, val);
 
-	/* 如果键已经存在,那么停止 */
+	// 如果键已经存在,那么停止
 	// todo
 }
 
@@ -92,7 +93,7 @@ void dbOverwrite(redisDb *db, robj *key, robj *val) {
  *    键的过期时间会被移除（键变为持久的）
  */
 void setKey(redisDb *db, robj *key, robj *val) {
-	/* 添加或者覆写数据库中的键值对 */
+	// 添加或者覆写数据库中的键值对
 	if (lookupKeyWrite(db, key) == NULL) {
 		dbAdd(db, key, val);
 	}
@@ -100,7 +101,7 @@ void setKey(redisDb *db, robj *key, robj *val) {
 		dbOverwrite(db, key, val);
 	}
 	incrRefCount(val);
-	/* 移除键的过期时间 */
+	// 移除键的过期时间
 	//removeExpire(db, key);
 }
 

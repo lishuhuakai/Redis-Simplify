@@ -16,17 +16,19 @@
 #include <syslog.h>
 #include <netinet/in.h>
 #include <signal.h>
+#include <assert.h>
 #include "anet.h"
 #include "ae.h"
 #include "sds.h"
+#include "zmalloc.h"
 
 /* Error codes */
 #define REDIS_OK				0
 #define REDIS_ERR				-1
 
 /* Objects encoding. Some kind of objects like Strings and Hashes can be
-* internally represented in multiple ways. The 'encoding' field of the object
-* is set to one of this fields for this object. */
+ * internally represented in multiple ways. The 'encoding' field of the object
+ * is set to one of this fields for this object. */
 // 对象编码
 #define REDIS_ENCODING_RAW 0     /* Raw representation */
 
@@ -104,59 +106,71 @@
 */
 #define REDIS_LRU_BITS 24
 
+//
+// redisObject Redis对象
+// 
 typedef struct redisObject {
 
-	unsigned type : 4; /* 类型 */
+	unsigned type : 4; // 类型
 
-	unsigned encoding : 4; /* 编码 */
+	unsigned encoding : 4; // 编码
 
-	int refcount; /* 引用计数 */
+	unsigned lru : REDIS_LRU_BITS; // 对象最后一次被访问的时间
 
-	void *ptr; /* 指向实际值的指针 */
+	int refcount; // 引用计数
+
+	void *ptr; // 指向实际值的指针
 } robj;
 
+
 typedef struct redisDb {
-	dict *dict;                 /* 数据库键空间，保存着数据库中的所有键值对 */
-	int id;                     /* 数据库号码 */
+
+	dict *dict;                 // 数据库键空间，保存着数据库中的所有键值对
+
+	dict *expires;              // 键的过期时间，字典的键为键，字典的值为过期事件 UNIX 时间戳
+
+	dict *blocking_keys;        // 正处于阻塞状态的键
+
+	dict *ready_keys;           // 可以解除阻塞的键
+
+	int id;                     // 数据库号码
 } redisDb;
 
-/* With multiplexing we need to take per-client state.
-* Clients are taken in a liked list.
-*
-* 因为 I/O 复用的缘故，需要为每个客户端维持一个状态。
-*
-* 多个客户端状态被服务器用链表连接起来。
-*/
+/*
+ * 因为 I/O 复用的缘故，需要为每个客户端维持一个状态。
+ *
+ * 多个客户端状态被服务器用链表连接起来。
+ */
 typedef struct redisClient {
-	int fd; /*  套接字描述符 */
+	int fd; //  套接字描述符
 
-	redisDb *db; /* 当前正在使用的数据库 */
+	redisDb *db; // 当前正在使用的数据库
 
-	int dictid; /*  当前正在使用的数据库的 id （号码） */
+	int dictid; //  当前正在使用的数据库的 id （号码）
 
-	robj *name; /* 客户端的名字 */
+	robj *name; // 客户端的名字
 
-	sds querybuf; /* 查询缓冲区 */
+	sds querybuf; // 查询缓冲区
 
-	int argc; /* 参数数量 */
+	int argc; // 参数数量
 
-	robj **argv; /* 参数对象数组 */
+	robj **argv; // 参数对象数组
 
-	struct redisCommand *cmd, *lastcmd; /* 记录被客户端执行的命令 */
+	struct redisCommand *cmd, *lastcmd; // 记录被客户端执行的命令
 
-	int reqtype; /* 请求的类型,是内联命令还是多条命令 */
+	int reqtype; // 请求的类型,是内联命令还是多条命令 
 
-	int multibulklen; /* 剩余未读取的命令内容数量 */
+	int multibulklen; // 剩余未读取的命令内容数量
 
-	long bulklen; /* 命令内容的长度 */
+	long bulklen; // 命令内容的长度
 
-	list *reply; /* 回复链表 */
+	list *reply; // 回复链表
 
-	int sentlen; /* 已发送字节,处理short write时使用 */
+	int sentlen; // 已发送字节,处理short write时使用
 
-	unsigned long reply_bytes; /* 回复链表中对象的总大小 */
+	unsigned long reply_bytes; // 回复链表中对象的总大小
 
-	int bufpos; /* 回复偏移量 */
+	int bufpos; // 回复偏移量
 
 	char buf[REDIS_REPLY_CHUNK_BYTES];
 
@@ -166,51 +180,50 @@ typedef struct redisClient {
 struct redisServer {
 
 	/* General */
-	char *configfile;           /* 配置文件的绝对路径,要么就是NULL */
+	char *configfile;   // 配置文件的绝对路径,要么就是NULL
 
-	int hz;                     /* serverCron() 每秒调用的次数 */
+	int hz;             // serverCron() 每秒调用的次数
 
-	redisDb *db;				/* 一个数组,保存着服务器中所有的数据库 */
+	redisDb *db;		// 一个数组,保存着服务器中所有的数据库
 
-	dict *commands;             /* 命令表（受到 rename 配置选项的作用） */
+	dict *commands;     // 命令表（受到 rename 配置选项的作用）
 
-	dict *orig_commands;        /* Command table before command renaming. */
+	dict *orig_commands;        // Command table before command renaming.
 
-	aeEventLoop *el; /* 事件状态 */
+	aeEventLoop *el; // 事件状态
 
-	int shutdown_asap; /* 关闭服务器的标识 */
+	int shutdown_asap; // 关闭服务器的标识
 
-	int port;					/* TCP 监听端口 */
-	int tcp_backlog;			/* TCP listen() backlog */
-	char *bindaddr[REDIS_BINDADDR_MAX]; /* ip地址 */
-	int bindaddr_count; /* 地址的数量 */
+	int port;					// TCP 监听端口
+	int tcp_backlog;			// TCP listen() backlog
+	char *bindaddr[REDIS_BINDADDR_MAX]; // ip地址
+	int bindaddr_count; // 地址的数量
 
-	int ipfd[REDIS_BINDADDR_MAX];  /* TCP 描述符 */
-	int ipfd_count;				   /* 已经使用了的描述符的数目 */
+	int ipfd[REDIS_BINDADDR_MAX];  // TCP 描述符
+	int ipfd_count;				   // 已经使用了的描述符的数目
 
-	list *clients;	/* 一个链表,保存了所有的客户端状态结构 */
+	list *clients;	// 一个链表,保存了所有的客户端状态结构
 
-	list *clients_to_close; /* 链表,保存了所有待关闭的客户端 */
+	list *clients_to_close; // 链表,保存了所有待关闭的客户端
 
-	redisClient *current_client; /* 服务器当前服务的客户端,仅用于崩溃报告 */
+	redisClient *current_client; // 服务器当前服务的客户端,仅用于崩溃报告
 	
-	char neterr[ANET_ERR_LEN]; /* 用于记录网络错误 */
+	char neterr[ANET_ERR_LEN]; // 用于记录网络错误 
 
-	int tcpkeepalive; /* 是否开启 SO_KEEPALIVE选项 */
-
-	int dbnum; /* 数据库的总数目 */
+	int tcpkeepalive;	// 是否开启 SO_KEEPALIVE选项
+	int dbnum;			// 数据库的总数目
 
 	/* Limits */
-	int maxclients;                 /* Max number of simultaneous clients */
+	int maxclients;      // Max number of simultaneous clients
 };
 
 
 typedef void redisCommandProc(redisClient *c);
 typedef int *redisGetKeysProc(struct redisCommand *cmd, robj **argv, int argc, int *numkeys);
 
-/*
-* Redis 命令
-*/
+//
+// redisCommand Redis 命令
+//
 struct redisCommand {
 
 	// 命令名字
@@ -225,11 +238,13 @@ struct redisCommand {
 	// 字符串表示的 FLAG
 	char *sflags; /* Flags as string representation, one char per flag. */
 
-	int flags; /* 实际flag */
+	int flags; // 实际flag 
+
+	// 做了一些简化,删除了一些不常用的域
 };
 
 
-/* 通过复用来减少内存碎片，以及减少操作耗时的共享对象 */
+// 通过复用来减少内存碎片，以及减少操作耗时的共享对象
 struct sharedObjectsStruct {
 	robj *crlf, *ok, *err, *emptybulk, *czero, *cone, *cnegone, *pong, *space,
 		*colon, *nullbulk, *nullmultibulk, *queued,
@@ -244,5 +259,7 @@ struct sharedObjectsStruct {
 		*bulkhdr[REDIS_SHARED_BULKHDR_LEN];  /* "$<value>\r\n" */
 };
 
+/* api */
+int processCommand(redisClient *c);
 
 #endif
