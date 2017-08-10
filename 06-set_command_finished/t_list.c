@@ -1,5 +1,14 @@
 #include "redis.h"
 #include "ziplist.h"
+#include "t_list.h"
+#include "dict.h"
+#include "db.h"
+#include "ziplist.h"
+#include "t_string.h"
+#include "networking.h"
+#include "object.h"
+#include "util.h"
+#include <math.h>
 
 
 /*============================ Variable and Function Declaration ======================== */
@@ -10,9 +19,9 @@ robj *getDecodedObject(robj *o);
 
 
 /*
-* 返回entry结构当前所保存的列表节点
-* 如果entry没有记录任何节点,那么返回NULL
-*/
+ * 返回entry结构当前所保存的列表节点
+ * 如果entry没有记录任何节点,那么返回NULL
+ */
 robj *listTypeGet(listTypeEntry *entry) {
 	listTypeIterator *li = entry->li;
 
@@ -41,8 +50,8 @@ robj *listTypeGet(listTypeEntry *entry) {
 }
 
 /*
-* 返回列表的节点数量
-*/
+ * 返回列表的节点数量
+ */
 unsigned long listTypeLength(robj *subject) {
 	if (subject->encoding == REDIS_ENCODING_ZIPLIST)
 		return ziplistLen(subject->ptr);
@@ -57,14 +66,14 @@ unsigned long listTypeLength(robj *subject) {
 *----------------------------------------------------------------------------*/
 
 /* 
-* 创建并返回一个列表迭代器。
-*
-* 参数 index 决定开始迭代的列表索引。
-*
-* 参数 direction 则决定了迭代的方向。
-*
-* listTypeIterator 于 redis.h 文件中定义。
-*/
+ * 创建并返回一个列表迭代器。
+ *
+ * 参数 index 决定开始迭代的列表索引。
+ *
+ * 参数 direction 则决定了迭代的方向。
+ *
+ * listTypeIterator 于 redis.h 文件中定义。
+ */
 listTypeIterator *listTypeInitIterator(robj *subject, long index, unsigned char direction) {
 
 	listTypeIterator *li = zmalloc(sizeof(listTypeIterator));
@@ -86,15 +95,15 @@ listTypeIterator *listTypeInitIterator(robj *subject, long index, unsigned char 
 }
 
 /*
-* 释放迭代器
-*/
+ * 释放迭代器
+ */
 void listTypeReleaseIterator(listTypeIterator *li) {
 	zfree(li);
 }
 
 /*
-* 使用entry结构记录迭代器当前指向的节点,并将迭代器的指针移动到下一个元素
-*/
+ * 使用entry结构记录迭代器当前指向的节点,并将迭代器的指针移动到下一个元素
+ */
 int listTypeNext(listTypeIterator *li, listTypeEntry *entry) {
 	assert(li->subject->encoding == li->encoding);
 	entry->li = li;
@@ -128,8 +137,8 @@ int listTypeNext(listTypeIterator *li, listTypeEntry *entry) {
 }
 
 /*
-* 将类表的底层编码从ziplist转换成双端链表
-*/
+ * 将类表的底层编码从ziplist转换成双端链表
+ */
 void listTypeConvert(robj *subject, int enc) {
 	listTypeIterator *li;
 	listTypeEntry entry;
@@ -153,12 +162,12 @@ void listTypeConvert(robj *subject, int enc) {
 		assert(0);
 }
 /* 
-* 对输入值 value 进行检查，看是否需要将 subject 从 ziplist 转换为双端链表，
-* 以便保存值 value 。
-*
-* 函数只对 REDIS_ENCODING_RAW 编码的 value 进行检查，
-* 因为整数编码的值不可能超长。
-*/
+ * 对输入值 value 进行检查，看是否需要将 subject 从 ziplist 转换为双端链表，
+ * 以便保存值 value 。
+ *
+ * 函数只对 REDIS_ENCODING_RAW 编码的 value 进行检查，
+ * 因为整数编码的值不可能超长。
+ */
 void listTypeTryConversion(robj *subject, robj *value) {
 
 	/* 确保 subject 为 ZIPLIST 编码 */
@@ -172,16 +181,16 @@ void listTypeTryConversion(robj *subject, robj *value) {
 }
 
 /* 
-* 将给定元素添加到列表的表头或表尾。
-*
-* 参数 where 决定了新元素添加的位置：
-*
-*  - REDIS_HEAD 将新元素添加到表头
-*
-*  - REDIS_TAIL 将新元素添加到表尾
-*
-* 调用者无须担心 value 的引用计数，因为这个函数会负责这方面的工作。
-*/
+ * 将给定元素添加到列表的表头或表尾。
+ *
+ * 参数 where 决定了新元素添加的位置：
+ *
+ *  - REDIS_HEAD 将新元素添加到表头
+ *
+ *  - REDIS_TAIL 将新元素添加到表尾
+ *
+ * 调用者无须担心 value 的引用计数，因为这个函数会负责这方面的工作。
+ */
 void listTypePush(robj *subject, robj *value, int where) {
 	/* 是否需要转换编码？ */
 	listTypeTryConversion(subject, value);
@@ -258,14 +267,14 @@ void rpushCommand(redisClient *c) {
 }
 
 /*
-* 从列表的表头或表尾中弹出一个元素。
-*
-* 参数 where 决定了弹出元素的位置：
-*
-*  - REDIS_HEAD 从表头弹出
-*
-*  - REDIS_TAIL 从表尾弹出
-*/
+ * 从列表的表头或表尾中弹出一个元素。
+ *
+ * 参数 where 决定了弹出元素的位置：
+ *
+ *  - REDIS_HEAD 从表头弹出
+ *
+ *  - REDIS_TAIL 从表尾弹出
+ */
 robj *listTypePop(robj *subject, int where) {
 	robj *value = NULL;
 	
@@ -344,7 +353,7 @@ void rpopCommand(redisClient *c) {
 void lindexCommand(redisClient *c) {
 	robj *o = lookupKeyReadOrReply(c, c->argv[1], shared.nullbulk);
 	if (o == NULL || checkType(c, o, REDIS_LIST)) return;
-	long index;
+	long long index;
 	robj *value = NULL;
 
 	/* 取出整数值对象 index */
@@ -398,7 +407,7 @@ void lsetCommand(redisClient *c) {
 	/* 取出列表对象 */
 	robj *o = lookupKeyWriteOrReply(c, c->argv[1], shared.nokeyerr);
 	if (o == NULL || checkType(c, o, REDIS_LIST)) return;
-	long index;
+	long long index;
 	/* 取出值对象 */
 	robj *value = (c->argv[3] = tryObjectEncoding(c->argv[3]));
 	/* 取出整数值对象index */
@@ -412,7 +421,7 @@ void lsetCommand(redisClient *c) {
 		/* 查找索引 */
 		p = ziplistIndex(zl, index);
 		if (p == NULL)
-			addReply(zl, index);
+			addReply(c, shared.outofrangeerr);
 		else {
 			/* 删除现有的值 */
 			o->ptr = ziplistDelete(o->ptr, &p);

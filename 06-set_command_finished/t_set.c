@@ -1,9 +1,17 @@
-#include "redis.h"
 #include "intset.h"
-
+#include "ziplist.h"
+#include "dict.h"
+#include "db.h"
+#include "ziplist.h"
+#include "t_string.h"
+#include "networking.h"
+#include "object.h"
+#include "util.h"
+#include "t_set.h"
+#include <math.h>
 /*
-* 命令的类型
-*/
+ * 命令的类型
+ */
 #define REDIS_OP_UNION 0
 #define REDIS_OP_DIFF 1
 #define REDIS_OP_INTER 2
@@ -14,10 +22,10 @@ extern struct redisServer server;
 extern struct dictType setDictType;
 
 /*
-* 创建并返回一个多态集合迭代器
-*
-* setTypeIterator 定义在 redis.h
-*/
+ * 创建并返回一个多态集合迭代器
+ *
+ * setTypeIterator 定义在 redis.h
+ */
 setTypeIterator *setTypeInitIterator(robj *subject) {
 
 	setTypeIterator *si = zmalloc(sizeof(setTypeIterator));
@@ -46,13 +54,13 @@ setTypeIterator *setTypeInitIterator(robj *subject) {
 }
 
 /* 
-* setTypeNext 的非 copy-on-write 友好版本，
-* 总是返回一个新的、或者已经增加过引用计数的对象。
-*
-* 调用者在使用完对象之后，应该对对象调用 decrRefCount() 。
-*
-* 这个函数应该在非 copy-on-write 时调用。
-*/
+ * setTypeNext 的非 copy-on-write 友好版本，
+ * 总是返回一个新的、或者已经增加过引用计数的对象。
+ *
+ * 调用者在使用完对象之后，应该对对象调用 decrRefCount() 。
+ *
+ * 这个函数应该在非 copy-on-write 时调用。
+ */
 robj *setTypeNextObject(setTypeIterator *si) {
 	int64_t intele;
 	robj *objele;
@@ -81,16 +89,16 @@ robj *setTypeNextObject(setTypeIterator *si) {
 
 
 /* 
-* 从非空集合中随机取出一个元素。
-*
-* 如果集合的编码为 intset ，那么将元素指向 int64_t 指针 llele 。
-* 如果集合的编码为 HT ，那么将元素对象指向对象指针 objele 。
-*
-* 函数的返回值为集合的编码方式，通过这个返回值可以知道那个指针保存了元素的值。
-*
-* 因为被返回的对象是没有被增加引用计数的，
-* 所以这个函数是对 copy-on-write 友好的。
-*/
+ * 从非空集合中随机取出一个元素。
+ *
+ * 如果集合的编码为 intset ，那么将元素指向 int64_t 指针 llele 。
+ * 如果集合的编码为 HT ，那么将元素对象指向对象指针 objele 。
+ *
+ * 函数的返回值为集合的编码方式，通过这个返回值可以知道那个指针保存了元素的值。
+ *
+ * 因为被返回的对象是没有被增加引用计数的，
+ * 所以这个函数是对 copy-on-write 友好的。
+ */
 int setTypeRandomElement(robj *setobj, robj **objele, int64_t*llele) {
 	if (setobj->encoding == REDIS_ENCODING_HT) {
 		dictEntry *de = dictGetRandomKey(setobj->ptr);
@@ -105,8 +113,8 @@ int setTypeRandomElement(robj *setobj, robj **objele, int64_t*llele) {
 }
 
 /*
-* 释放迭代器
-*/
+ * 释放迭代器
+ */
 void setTypeReleaseIterator(setTypeIterator *si) {
 
 	if (si->encoding == REDIS_ENCODING_HT)
@@ -116,22 +124,22 @@ void setTypeReleaseIterator(setTypeIterator *si) {
 }
 
 /* 
-* 取出被迭代器指向的当前集合元素。
-*
-* 因为集合即可以编码为 intset ，也可以编码为哈希表，
-* 所以程序会根据集合的编码，选择将值保存到那个参数里：
-*
-*  - 当编码为 intset 时，元素被指向到 llobj 参数
-*
-*  - 当编码为哈希表时，元素被指向到 eobj 参数
-*
-* 并且函数会返回被迭代集合的编码，方便识别。
-*
-* 当集合中的元素全部被迭代完毕时，函数返回 -1 。
-*
-* 因为被返回的对象是没有被增加引用计数的，
-* 所以这个函数是对 copy-on-write 友好的。
-*/
+ * 取出被迭代器指向的当前集合元素。
+ *
+ * 因为集合即可以编码为 intset ，也可以编码为哈希表，
+ * 所以程序会根据集合的编码，选择将值保存到那个参数里：
+ *
+ *  - 当编码为 intset 时，元素被指向到 llobj 参数
+ *
+ *  - 当编码为哈希表时，元素被指向到 eobj 参数
+ *
+ * 并且函数会返回被迭代集合的编码，方便识别。
+ *
+ * 当集合中的元素全部被迭代完毕时，函数返回 -1 。
+ *
+ * 因为被返回的对象是没有被增加引用计数的，
+ * 所以这个函数是对 copy-on-write 友好的。
+ */
 int setTypeNext(setTypeIterator *si, robj **objele, int64_t *llele) {
 
 	/* 从字典中取出对象 */
@@ -156,10 +164,10 @@ int setTypeNext(setTypeIterator *si, robj **objele, int64_t *llele) {
 
 
 /*
-* 多态 remove 操作
-*
-* 删除成功返回 1 ，因为元素不存在而导致删除失败返回 0 。
-*/
+ * 多态 remove 操作
+ *
+ * 删除成功返回 1 ，因为元素不存在而导致删除失败返回 0 。
+ */
 int setTypeRemove(robj *setobj, robj *value) {
 	long long llval;
 	if (setobj->encoding == REDIS_ENCODING_HT) {
@@ -184,8 +192,8 @@ int setTypeRemove(robj *setobj, robj *value) {
 }
 
 /*
-* 集合多态size函数
-*/
+ * 集合多态size函数
+ */
 unsigned long setTypeSize(robj *subject) {
 	if (subject->encoding == REDIS_ENCODING_HT) {
 		return dictSize((dict*)subject->ptr);
@@ -199,8 +207,8 @@ unsigned long setTypeSize(robj *subject) {
 }
 
 /*
-* 创建一个 SET 编码的集合对象
-*/
+ * 创建一个 SET 编码的集合对象
+ */
 robj *createSetObject(void) {
 	dict *d = dictCreate(&setDictType, NULL);
 	robj *o = createObject(REDIS_SET, d);
@@ -209,12 +217,12 @@ robj *createSetObject(void) {
 }
 
 /* 
-*
-* 返回一个可以保存值 value 的集合。
-*
-* 当对象的值可以被编码为整数时，返回 intset ，
-* 否则，返回普通的哈希表。
-*/
+ *
+ * 返回一个可以保存值 value 的集合。
+ *
+ * 当对象的值可以被编码为整数时，返回 intset ，
+ * 否则，返回普通的哈希表。
+ */
 
 robj *setTypeCreate(robj *value) {
 	if (isObjectRepresentableAsLongLong(value, NULL) == REDIS_OK)
@@ -224,10 +232,10 @@ robj *setTypeCreate(robj *value) {
 
 
 /*
-* 将集合对象 setobj 的编码转换为 REDIS_ENCODING_HT 。
-*
-* 新创建的结果字典会被预先分配为和原来的集合一样大。
-*/
+ * 将集合对象 setobj 的编码转换为 REDIS_ENCODING_HT 。
+ *
+ * 新创建的结果字典会被预先分配为和原来的集合一样大。
+ */
 
 void setTypeConvert(robj *setobj, int enc) {
 
@@ -265,10 +273,10 @@ void setTypeConvert(robj *setobj, int enc) {
 }
 
 /*
-* 多态 add 操作
-*
-* 添加成功返回 1 ，如果元素已经存在，返回 0 。
-*/
+ * 多态 add 操作
+ *
+ * 添加成功返回 1 ，如果元素已经存在，返回 0 。
+ */
 int setTypeAdd(robj *subject, robj *value) {
 	long long llval;
 
@@ -309,8 +317,8 @@ int setTypeAdd(robj *subject, robj *value) {
 }
 
 /*
-* 多态ismember操作
-*/
+ * 多态ismember操作
+ */
 int setTypeIsMember(robj *subject, robj *value) {
 	long long llval;
 	if (subject->encoding == REDIS_ENCODING_HT) {
@@ -356,9 +364,10 @@ void saddCommand(redisClient *c) {
 
 	addReplyLongLong(c, added);
 }
+
 /*
-* 计算集合 s1 的基数和集合 s2 的基数之差
-*/
+ * 计算集合 s1 的基数和集合 s2 的基数之差
+ */
 int qsortCompareSetsByCardinality(const void *s1, const void *s2) {
 	return setTypeSize(*(robj**)s1) - setTypeSize(*(robj**)s2);
 }
@@ -643,8 +652,8 @@ void smoveCommand(redisClient *c) {
 }
 
 /*
-* 计算集合 s2 的基数减去集合 s1 的基数之差
-*/
+ * 计算集合 s2 的基数减去集合 s1 的基数之差
+ */
 int qsortCompareSetsByRevCardinality(const void *s1, const void *s2) {
 	robj *o1 = *(robj**)s1, *o2 = *(robj**)s2;
 
