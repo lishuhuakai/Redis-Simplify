@@ -1,26 +1,20 @@
 /* Hash Tables Implementation.
-*
-* This file implements in-memory hash tables with insert/del/replace/find/
-* get-random-element operations. Hash tables will auto-resize if needed
-* tables of power of two in size are used, collisions are handled by
-* chaining. See the source code for more information... :)
-*
-* 这个文件实现了一个内存哈希表，
-* 它支持插入、删除、替换、查找和获取随机元素等操作。
-*
-* 哈希表会自动在表的大小的二次方之间进行调整。
-*
-* 键的冲突通过链表来解决。
-*/
+ *
+ * 这个文件实现了一个内存哈希表，
+ * 它支持插入、删除、替换、查找和获取随机元素等操作。
+ *
+ * 哈希表会自动在表的大小的二次方之间进行调整。
+ *
+ * 键的冲突通过链表来解决。
+ */
 
 #include <stdint.h>
 
 #ifndef __DICT_H
 #define __DICT_H
 
-/*
-* 字典的操作状态
-*/
+/* 字典的操作状态 */
+
 // 操作成功
 #define DICT_OK 0
 // 操作失败（或出错）
@@ -31,9 +25,9 @@
 // 用这个宏来避免编译器错误
 #define DICT_NOTUSED(V) ((void) V)
 
-/*
-* 哈希表节点
-*/
+//
+// dictEntry 哈希表节点
+//
 typedef struct dictEntry {
 	// 键
 	void *key;
@@ -51,12 +45,12 @@ typedef struct dictEntry {
 } dictEntry;
 
 
-/*
-* 字典类型特定函数
-*/
-typedef struct dictType { // 有的时候我会觉得说,c语言的结构体会更加灵活,是吧.
+//
+// dictType 用于操作字典类型函数
+//
+typedef struct dictType {
 
-						  // 计算哈希值的函数
+	// 计算哈希值的函数
 	unsigned int(*hashFunction)(const void *key);
 
 	// 复制键的函数
@@ -79,14 +73,14 @@ typedef struct dictType { // 有的时候我会觉得说,c语言的结构体会�
 
 /* This is our hash table structure. Every dictionary has two of this as we
 * implement incremental rehashing, for the old to the new table. */
-/*
-* 哈希表
-*
-* 每个字典都使用两个哈希表，从而实现渐进式 rehash 。
-*/
+
+//
+// dictht 哈希表
+//每个字典都使用两个哈希表，从而实现渐进式 rehash
+// 
 typedef struct dictht { // 这是字典的头部
 
-						// 哈希表数组
+	// 哈希表数组, 每个元素都是一条链表
 	dictEntry **table;
 
 	// 哈希表大小
@@ -101,41 +95,36 @@ typedef struct dictht { // 这是字典的头部
 
 } dictht;
 
-/*
-* 字典
-*/
+//
+// dict 字典
+//
 typedef struct dict {
 	// 类型特定函数
-	dictType *type; // 好吧,原来你想说,dict其实是由经由hash表来实现的是吧.type里面主要记录了一系列的函数,可以说是规定了一系列的接口
+	dictType *type; // type里面主要记录了一系列的函数,可以说是规定了一系列的接口
 
-					// 私有数据
-	void *privdata; // 据说,privdata保存了需要传递给那些类型特定函数的可选参数
+	// 私有数据
+	void *privdata; // privdata保存了需要传递给那些类型特定函数的可选参数
 
-					// 哈希表
+	// 哈希表
 	dictht ht[2]; // 有两张hash表
 
-				  // rehash 索引
-				  // 当 rehash 不在进行时，值为 -1
+	// rehash 索引
+	// 并没有rehash时，值为 -1
 	int rehashidx; /* rehashing not in progress if rehashidx == -1 */
 
-				   // 目前正在运行的安全迭代器的数量
-	int iterators; /* number of iterators currently running */
+	int iterators; // 目前正在运行的安全迭代器的数量
 
 } dict;
 
-/* If safe is set to 1 this is a safe iterator, that means, you can call
-* dictAdd, dictFind, and other functions against the dictionary even while
-* iterating. Otherwise it is a non safe iterator, and only dictNext()
-* should be called while iterating. */
-/*
-* 字典迭代器
-*
-* 如果 safe 属性的值为 1 ，那么在迭代进行的过程中，
-* 程序仍然可以执行 dictAdd 、 dictFind 和其他函数，对字典进行修改。
-*
-* 如果 safe 不为 1 ，那么程序只会调用 dictNext 对字典进行迭代，
-* 而不对字典进行修改。
-*/
+//
+// dictIterator 字典迭代器
+// 
+// 如果 safe 属性的值为 1,那么在迭代进行的过程中，
+// 程序仍然可以执行 dictAdd, dictFind 和其他函数，对字典进行修改。
+//
+// 如果 safe 不为 1 ，那么程序只会调用 dictNext 对字典进行迭代，
+// 而不对字典进行修改。
+//
 typedef struct dictIterator {
 
 	// 被迭代的字典
@@ -153,15 +142,13 @@ typedef struct dictIterator {
 	//             从而防止指针丢失
 	dictEntry *entry, *nextEntry;
 
-	long long fingerprint; /* unsafe iterator fingerprint for misuse detection */
+	long long fingerprint; // unsafe iterator fingerprint for misuse detection
 } dictIterator;
 
 typedef void (dictScanFunction)(void *privdata, const dictEntry *de);
 
 /* This is the initial size of every hash table */
-/*
-* 哈希表的初始大小
-*/
+/* 哈希表的初始大小 */
 #define DICT_HT_INITIAL_SIZE     4
 
 /* ------------------------------- Macros ------------------------------------*/
