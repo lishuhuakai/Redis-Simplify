@@ -8,20 +8,20 @@
 #include <unistd.h>
 #include <sys/time.h>
 #include <float.h>
+
 #include "util.h"
 
 #define LOG_SIZE 1024
 
 /*
-* 一个简易的日志函数.
-*/
-
+ * 一个简易的日志函数.
+ */
 void mlog(const char *fileName, int lineNum, const char *func, const char *log_str, ...) {
-	va_list vArgList; /*定义一个va_list型的变量,这个变量是指向参数的指针. */
+	va_list vArgList; // 定义一个va_list型的变量,这个变量是指向参数的指针. 
 	char buf[LOG_SIZE];
-	va_start(vArgList, log_str); /* 用va_start宏初始化变量,这个宏的第二个参数是第一个可变参数的前一个参数,是一个固定的参数 */
-	vsnprintf(buf, LOG_SIZE, log_str, vArgList); /* 注意,不要漏掉前面的_ */
-	va_end(vArgList);  /* 用va_end宏结束可变参数的获取 */
+	va_start(vArgList, log_str); // 用va_start宏初始化变量,这个宏的第二个参数是第一个可变参数的前一个参数,是一个固定的参数
+	vsnprintf(buf, LOG_SIZE, log_str, vArgList); // 注意,不要漏掉前面的_
+	va_end(vArgList);  // 用va_end宏结束可变参数的获取
 	printf("%s:%d:%s --> %s\n", fileName, lineNum, func, buf);
 }
 
