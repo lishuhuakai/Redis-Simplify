@@ -1,17 +1,18 @@
-#include "redis.h"
-#include "dict.h"
+#include "networking.h"
+#include "db.h"
+#include "object.h"
 #include <signal.h>
 #include <ctype.h>
+
 /*============================== Variable and Function Declaration =========================*/
 extern struct sharedObjectsStruct shared;
 
-
 /*
-* 从数据库db中取出键key的值(对象)
-* 如果key的值存在,那么返回该值,否则,返回NULL.
-*/
+ * 从数据库db中取出键key的值(对象)
+ * 如果key的值存在,那么返回该值,否则,返回NULL.
+ */
 robj *lookupKey(redisDb *db, robj *key) {
-	/* 查找键空间 */
+	// 查找键空间
 	char *str = key->ptr;
 	dictEntry *de = dictFind(db->dict, key->ptr);
 
@@ -24,13 +25,13 @@ robj *lookupKey(redisDb *db, robj *key) {
 }
 
 /*
-* 为执行读取操作而取出键key在数据库db中的值,并根据是否成功找到值,更新服务器中的命中
-* 或者不命中信息,找到时返回值对象,没有找到是返回NULL.
-*/
+ * 为执行读取操作而取出键key在数据库db中的值,并根据是否成功找到值,更新服务器中的命中
+ * 或者不命中信息,找到时返回值对象,没有找到是返回NULL.
+ */
 robj *lookupKeyRead(redisDb *db, robj *key) {
 	robj *val;
 	
-	/* 从数据库中取出键的值 */
+	// 从数据库中取出键的值
 	val = lookupKey(db, key);
 
 	// todo
@@ -38,24 +39,24 @@ robj *lookupKeyRead(redisDb *db, robj *key) {
 }
 
 /*
-* 为执行读取操作而从数据库中查找返回key的值.
-* 如果key存在,那么返回key的值对象,否则的话,向客户端发送Reply参数中的信息,并返回NULL.
-*/
+ * 为执行读取操作而从数据库中查找返回key的值.
+ * 如果key存在,那么返回key的值对象,否则的话,向客户端发送Reply参数中的信息,并返回NULL.
+ */
 robj *lookupKeyReadOrReply(redisClient *c, robj *key, robj *reply) {
-	/* 查找 */
+	// 查找
 	robj *o = lookupKeyRead(c->db, key);
 
-	/* 决定是否发送信息 */
+	// 决定是否发送信息
 	if (!o) addReply(c, reply);
 	return o;
 }
 
 /* 为执行写入操作而取出键 key 在数据库 db 中的值。
-* 和 lookupKeyRead 不同，这个函数不会更新服务器的命中/不命中信息。
-* 找到时返回值对象，没找到返回 NULL 。
-*/
+ * 和 lookupKeyRead 不同，这个函数不会更新服务器的命中/不命中信息。
+ * 找到时返回值对象，没找到返回 NULL 。
+ */
 robj* lookupKeyWrite(redisDb *db, robj *key) {
-	/* 删除过期键 */
+	//  删除过期键
 	return lookupKey(db, key);
 }
 
@@ -64,12 +65,12 @@ robj* lookupKeyWrite(redisDb *db, robj *key) {
  * 程序在键已经存在时会停止。
  */
 void dbAdd(redisDb *db, robj *key, robj *val) {
-	/* 复制键名 */
+	// 复制键名
 	sds copy = sdsdup(key->ptr);
-	/* 尝试添加键值对 */
+	// 尝试添加键值对
 	int retval = dictAdd(db->dict, copy, val);
 
-	/* 如果键已经存在,那么停止 */
+	// 如果键已经存在,那么停止
 	// todo
 }
 
@@ -95,7 +96,7 @@ void dbOverwrite(redisDb *db, robj *key, robj *val) {
  *    键的过期时间会被移除（键变为持久的）
  */
 void setKey(redisDb *db, robj *key, robj *val) {
-	/* 添加或者覆写数据库中的键值对 */
+	// 添加或者覆写数据库中的键值对
 	if (lookupKeyWrite(db, key) == NULL) {
 		dbAdd(db, key, val);
 	}
@@ -103,7 +104,7 @@ void setKey(redisDb *db, robj *key, robj *val) {
 		dbOverwrite(db, key, val);
 	}
 	incrRefCount(val);
-	/* 移除键的过期时间 */
+	// 移除键的过期时间
 	//removeExpire(db, key);
 }
 
@@ -124,7 +125,7 @@ int selectDb(redisClient *c, int id) {
 robj *dbUnshareStringValue(redisDb *db, robj *key, robj *o) {
 	assert(o->type == REDIS_STRING);
 	if (o->refcount != 1 || o->encoding != REDIS_ENCODING_RAW) {
-		/* 这个东西被引用了的话,要重新构建一个对象 */
+		// 这个东西被引用了的话,要重新构建一个对象
 		robj *decoded = getDecodedObject(o);
 		o = createRawStringObject(decoded->ptr, sdslen(decoded->ptr));
 		decrRefCount(decoded);
@@ -133,8 +134,8 @@ robj *dbUnshareStringValue(redisDb *db, robj *key, robj *o) {
 	return o;
 }
 /*
-* 检查键key是否存在于数据库中,存在返回1,不存在返回0
-*/
+ * 检查键key是否存在于数据库中,存在返回1,不存在返回0
+ */
 int dbExists(redisDb *db, robj *key) {
 	return dictFind(db->dict, key->ptr) != NULL;
 }
@@ -149,10 +150,10 @@ void existsCommand(redisClient *c) {
 }
 
 /*
-* 为执行写入操作而从数据库中查找返回key的值.
-* 如果key存在,那么返回key的值对象.
-* 如果key不存在,那么向客户端发送reply参数中的信息,并返回NULL.
-*/
+ * 为执行写入操作而从数据库中查找返回key的值.
+ * 如果key存在,那么返回key的值对象.
+ * 如果key不存在,那么向客户端发送reply参数中的信息,并返回NULL.
+ */
 robj* lookupKeyWriteOrReply(redisClient *c, robj *key, robj* reply) {
 	robj *o = lookupKeyWrite(c->db, key);
 	if (!o) addReply(c, reply);
@@ -160,11 +161,11 @@ robj* lookupKeyWriteOrReply(redisClient *c, robj *key, robj* reply) {
 }
 
 /*
-* 从数据库中删除给定的键,键的值,以及键的过期时间.
-* 删除成功返回1,因为键不存在而导致删除失败时,返回0.
-*/
+ * 从数据库中删除给定的键,键的值,以及键的过期时间.
+ * 删除成功返回1,因为键不存在而导致删除失败时,返回0.
+ */
 int dbDelete(redisDb *db, robj *key) {
-	/* 删除键值对 */
+	// 删除键值对
 	if (dictDelete(db->dict, key->ptr) == DICT_OK) {
 		// todo
 		return 1;

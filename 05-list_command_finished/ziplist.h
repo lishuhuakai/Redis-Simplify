@@ -1,3 +1,6 @@
+#ifndef __ZIPLIST_H_
+#define __ZIPLIST_H_
+
 #define ZIPLIST_HEAD 0
 #define ZIPLIST_TAIL 1
 
@@ -14,3 +17,5 @@ unsigned int ziplistCompare(unsigned char *p, unsigned char *s, unsigned int sle
 unsigned char *ziplistFind(unsigned char *p, unsigned char *vstr, unsigned int vlen, unsigned int skip);
 unsigned int ziplistLen(unsigned char *zl);
 size_t ziplistBlobLen(unsigned char *zl);
+
+#endif /* __ZIPLIST_H_ */
