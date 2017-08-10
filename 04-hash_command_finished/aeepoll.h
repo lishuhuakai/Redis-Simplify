@@ -3,9 +3,11 @@
 #include "ae.h"
 #include <sys/epoll.h>
 #include <time.h>
-/*
-* 事件状态
-*/
+#include <unistd.h>
+
+//
+// aeApiState 事件状态
+//
 typedef struct aeApiState {
 	// epoll_event 实例描述符
 	int epfd;
@@ -14,7 +16,7 @@ typedef struct aeApiState {
 
 } aeApiState;
 
-int aeApiPoll(aeEventLoop *eventLoop/*, struct timeval *tvp*/);
+int aeApiPoll(aeEventLoop *eventLoop, struct timeval *tvp);
 int aeApiCreate(aeEventLoop *eventLoop);
 int aeApiResize(aeEventLoop *eventLoop, int setsize);
 void aeApiFree(aeEventLoop *eventLoop);
