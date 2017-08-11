@@ -113,7 +113,7 @@ size_t zmalloc_size(void *ptr) {
     size_t size = *((size_t*)realptr);
     /* Assume at least that all the allocations are padded at sizeof(long) by
      * the underlying allocator. */
-    if (size & (sizeof(long) - 1)) size += sizeof(long)-(size&(sizeof(long)-1));
+    if (size&(sizeof(long)-1)) size += sizeof(long)-(size&(sizeof(long)-1));
     return size+PREFIX_SIZE;
 }
 
@@ -128,6 +128,7 @@ void zfree(void *ptr) {
     oldsize = *((size_t*)realptr);
     update_zmalloc_stat_free(oldsize+PREFIX_SIZE);
     free(realptr);
+
 }
 
 char *zstrdup(const char *s) {
@@ -142,7 +143,6 @@ size_t zmalloc_used_memory(void) {
     size_t um;
 
     if (zmalloc_thread_safe) {
-
         pthread_mutex_lock(&used_memory_mutex);
         um = used_memory;
         pthread_mutex_unlock(&used_memory_mutex);
