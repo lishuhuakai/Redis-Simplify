@@ -1,3 +1,6 @@
+#ifndef __AOF_H_
+#define __AOF_H_
+
 #include <unistd.h>
 #include "redis.h"
 #define aof_fsync fdatasync
@@ -18,3 +21,6 @@
 void flushAppendOnlyFile(int force);
 void feedAppendOnlyFile(struct redisCommand *cmd, int dictid, robj **argv, int argc);
 void backgroundRewriteDoneHandler(int exitcode, int bysignal);
+int rewriteAppendOnlyFileBackground(void); 
+int loadAppendOnlyFile(char *filename);
+#endif /* __AOF_H_ */

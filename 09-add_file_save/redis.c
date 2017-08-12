@@ -1,5 +1,5 @@
 #include "redis.h"
-#include "util.h"
+
 #include <time.h>
 #include <signal.h>
 #include <sys/wait.h>
@@ -16,91 +16,32 @@
 #include <limits.h>
 #include <float.h>
 #include <math.h>
-#include <stdlib.h>
 #include <sys/resource.h>
 #include <sys/utsname.h>
 #include <locale.h>
-
-/* Global vars that are actually used as constants. The following double
-* values are used for double on-disk serialization, and are initialized
-* at runtime to avoid strange compiler optimizations. */
-
-double R_Zero, R_PosInf, R_NegInf, R_Nan;
+#include "db.h"
+#include "object.h"
+#include "util.h"
+#include "t_string.h"
+#include "t_hash.h"
+#include "networking.h"
+#include "t_list.h"
+#include "t_set.h"
+#include "t_zset.h"
+#include "aof.h"
 
 struct sharedObjectsStruct shared;
+
 /*=============================== Function declariton =======================*/
-
-int *zunionInterGetKeys(struct redisCommand *cmd, robj **argv, int argc, int *numkeys);
-
-void freeClientArgv(redisClient *c);
 void setCommand(redisClient *c);
 void getCommand(redisClient *c);
-void setnxCommand(redisClient *c);
-void setexCommand(redisClient *c);
-void psetexCommand(redisClient *c);
-void appendCommand(redisClient *c);
-void strlenCommand(redisClient *c);
-void existsCommand(redisClient *c);
-void setrangeCommand(redisClient *c);
-void getrangeCommand(redisClient *c);
-void incrCommand(redisClient *c);
-void decrCommand(redisClient *c);
-void msetCommand(redisClient *c);
-void msetnxCommand(redisClient *c);
-void incrbyCommand(redisClient *c);
-void decrbyCommand(redisClient *c);
-void mgetCommand(redisClient *c);
-void hexistsCommand(redisClient *c);
-void hsetCommand(redisClient *c);
-void hgetCommand(redisClient *c);
-void hgetallCommand(redisClient *c);
-void hmsetCommand(redisClient *c);
-void hmgetCommand(redisClient *c);
-void hincrbyCommand(redisClient *c);
-void hlenCommand(redisClient *c);
-void hkeysCommand(redisClient *c);
-void hvalsCommand(redisClient *c);
-
-void lpushCommand(redisClient *c);
-void rpushCommand(redisClient *c);
-void lpopCommand(redisClient *c);
-void rpopCommand(redisClient *c);
-void lindexCommand(redisClient *c);
-void llenCommand(redisClient *c);
-void lsetCommand(redisClient *c);
-void saddCommand(redisClient *c);
-void sinterCommand(redisClient *c);
-void scardCommand(redisClient *c);
-void spopCommand(redisClient *c);
-void sismemberCommand(redisClient *c);
-void smoveCommand(redisClient *c);
-void sunionCommand(redisClient *c);
-void sunionstoreCommand(redisClient *c);
-void sdiffstoreCommand(redisClient *c);
-void sdiffCommand(redisClient *c);
-
-void zaddCommand(redisClient *c);
-void zcardCommand(redisClient *c);
-void zrankCommand(redisClient *c);
-void zunionstoreCommand(redisClient *c);
-void zinterstoreCommand(redisClient *c);
-void zincrbyCommand(redisClient *c);
-void zcountCommand(redisClient *c);
-
-void scanCommand(redisClient *c);
-void expireCommand(redisClient *c);
-void pexpireCommand(redisClient *c);
-void ttlCommand(redisClient *c);
-void persistCommand(redisClient *c);
-void saveCommand(redisClient *c);
-void selectCommand(redisClient *c);
-
 /*================================= Globals ================================= */
 
 /* Global vars */
 struct redisServer server; /* server global state */
+double R_Zero, R_PosInf, R_NegInf, R_Nan;
 
-struct redisCommand redisCommandTable[] = { // 可以学习一下它的代码编写模式,确实非常漂亮
+struct redisCommand redisCommandTable[] = {
 	{ "get",getCommand,2,"r",0, NULL,1,1,1,0,0 },
 	{ "set",setCommand,-3,"wm",0,NULL,1,1,1,0,0 },
 	{ "setnx",setnxCommand,3,"wm",0,NULL,1,1,1,0,0 },
@@ -111,7 +52,7 @@ struct redisCommand redisCommandTable[] = { // 可以学习一下它的代码编
 	{ "exists",existsCommand,2,"r",0,NULL,1,1,1,0,0 },
 	{ "setrange",setrangeCommand,4,"wm",0,NULL,1,1,1,0,0 },
 	{ "getrange",getrangeCommand,4,"r",0,NULL,1,1,1,0,0 },
-	{ "substr",getrangeCommand,4,"r",0,NULL,1,1,1,0,0 }, /* 求子串居然是getrange的alias */ 
+	{ "substr",getrangeCommand,4,"r",0,NULL,1,1,1,0,0 }, // 求子串居然是getrange的alias 
 	{ "incr",incrCommand,2,"wm",0,NULL,1,1,1,0,0 },
 	{ "decr",decrCommand,2,"wm",0,NULL,1,1,1,0,0 },
 	{ "mget",mgetCommand,-2,"r",0,NULL,1,-1,1,0,0 },
@@ -176,9 +117,9 @@ unsigned int dictSdsCaseHash(const void *key) {
 }
 
 int dictSdsKeyCompare(void *privdata, const void *key1,
-	const void *key2) /* 比较两个键的值是否相等,值得一提的是,两个key应该是字符串对象 */
-{
+	const void *key2) { /* 比较两个键的值是否相等,值得一提的是,两个key应该是字符串对象 */
 	int l1, l2;
+
 	l1 = sdslen((sds)key1); /* 获得长度 */
 	l2 = sdslen((sds)key2);
 	if (l1 != l2) return 0;
@@ -186,14 +127,15 @@ int dictSdsKeyCompare(void *privdata, const void *key1,
 }
 
 /* A case insensitive version used for the command lookup table and other
-* places where case insensitive non binary-safe comparison is needed. */
+ * places where case insensitive non binary-safe comparison is needed. */
 int dictSdsKeyCaseCompare(void *privdata, const void *key1,
-	const void *key2)
-{
-	return strcasecmp(key1, key2) == 0; /* 应该是不区分大小 */ 
+	const void *key2) {
+	return strcasecmp(key1, key2) == 0; // 不区分大小写 
 }
-
-void dictSdsDestructor(void *privdata, void *val) { /* 设置析构函数 */
+ /* 
+  * 设置析构函数 
+  */
+void dictSdsDestructor(void *privdata, void *val) {
 	sdsfree(val);
 }
 
@@ -209,7 +151,7 @@ dictType commandTableDictType = {
 
 void dictRedisObjectDestructor(void *privdata, void *val) {
 	if (val == NULL) return; /* Values of swapped out keys as set to NULL */
-	decrRefCount(val); /* 减少一个引用 */
+	decrRefCount(val); // 减少一个引用 
 }
 
 dictType dbDictType = {
@@ -320,24 +262,26 @@ void updateDictResizePolicy(void) {
 
 /*================================== Commands ================================ */
 
-/* 
-* 根据 redis.c 文件顶部的命令列表，创建命令表
-*/
+/*
+ * 根据 redis.c 文件顶部的命令列表，创建命令表
+ */
 void populateCommandTable(void) {
 	int j;
+
+	// 命令的数量
 	int numcommands = sizeof(redisCommandTable) / sizeof(struct redisCommand);
 
 	for (j = 0; j < numcommands; j++) {
 
-		/* 指定命令 */
+		// 指定命令
 		struct redisCommand *c = redisCommandTable + j;
 
-		/* 取出字符串 FLAG */
+		// 取出字符串 FLAG
 		char *f = c->sflags;
 
 		int retval1, retval2;
 
-		/* 根据字符串 FLAG 生成实际 FLAG */
+		// 根据字符串 FLAG 生成实际 FLAG
 		while (*f != '\0') {
 			switch (*f) {
 			case 'w': c->flags |= REDIS_CMD_WRITE; break;
@@ -358,11 +302,11 @@ void populateCommandTable(void) {
 			f++;
 		}
 
-		/* 将命令关联到命令表 */
+		// 将命令关联到命令表
 		retval1 = dictAdd(server.commands, sdsnew(c->name), c);
 
-		
-		/* 将命令也关联到原始命令表
+		/*
+		 * 将命令也关联到原始命令表
 		 *
 		 * 原始命令表不会受 redis.conf 中命令改名的影响
 		 */
@@ -371,25 +315,25 @@ void populateCommandTable(void) {
 }
 
 /*
-* 根据给定命令名字（SDS），查找命令
-*/
+ * 根据给定命令名字（SDS），查找命令
+ */
 struct redisCommand *lookupCommand(sds name) {
 	return dictFetchValue(server.commands, name);
 }
 
 /* 
-* 将指定命令（以及执行该命令的上下文，比如数据库 id 等信息）传播到 AOF 和 slave 。
-*
-* flags are an xor between:
-* FLAG 可以是以下标识的 xor ：
-*
-* + REDIS_PROPAGATE_NONE (no propagation of command at all)
-*   不传播
-*
-* + REDIS_PROPAGATE_AOF (propagate into the AOF file if is enabled)
-*   传播到 AOF
-*
-*/
+ * 将指定命令（以及执行该命令的上下文，比如数据库 id 等信息）传播到 AOF 和 slave 。
+ *
+ * flags are an xor between:
+ * FLAG 可以是以下标识的 xor ：
+ *
+ * + REDIS_PROPAGATE_NONE (no propagation of command at all)
+ *   不传播
+ *
+ * + REDIS_PROPAGATE_AOF (propagate into the AOF file if is enabled)
+ *   传播到 AOF
+ *
+ */
 void propagate(struct redisCommand *cmd, int dbid, robj **argv, int argc,
 	int flags)
 {
@@ -397,7 +341,6 @@ void propagate(struct redisCommand *cmd, int dbid, robj **argv, int argc,
 	if (server.aof_state != REDIS_AOF_OFF && flags & REDIS_PROPAGATE_AOF)
 		feedAppendOnlyFile(cmd, dbid, argv, argc);
 }
-
 void call(redisClient *c, int flags) {
 	long long dirty;
 	/* 保留旧 dirty 计数器值 */
@@ -416,21 +359,22 @@ void call(redisClient *c, int flags) {
 		if (flags != REDIS_PROPAGATE_NONE)
 			propagate(c->cmd, c->db->id, c->argv, c->argc, flags);
 	}
-	c->cmd->proc(c); /* 执行实现函数 */
+	c->cmd->proc(c); // 执行实现函数
 }
 
 /*
-* 这个函数执行时，我们已经读入了一个完整的命令到客户端，
-* 这个函数负责执行这个命令，
-* 或者服务器准备从客户端中进行一次读取。
-* 如果这个函数返回 1 ，那么表示客户端在执行命令之后仍然存在，
-* 调用者可以继续执行其他操作。
-* 否则，如果这个函数返回 0 ，那么表示客户端已经被销毁。
-*/
+ * 这个函数执行时，我们已经读入了一个完整的命令到客户端，
+ * 这个函数负责执行这个命令，
+ * 或者服务器准备从客户端中进行一次读取。
+ * 如果这个函数返回 1 ，那么表示客户端在执行命令之后仍然存在，
+ * 调用者可以继续执行其他操作。
+ * 否则，如果这个函数返回 0 ，那么表示客户端已经被销毁。
+ */
 int processCommand(redisClient *c) {
-	/* 查找命令，并进行命令合法性检查，以及命令参数个数检查 */
+	// 查找命令，并进行命令合法性检查，以及命令参数个数检查
+	
+	char *cmd = c->argv[0]->ptr;
 	c->cmd = c->lastcmd = lookupCommand(c->argv[0]->ptr);
-
 	/* 如果服务器正在载入数据到数据库，那么只执行带有 REDIS_CMD_LOADING
 	 * 标识的命令，否则将出错 */
 	if (server.loading && !(c->cmd->flags & REDIS_CMD_LOADING)) {
@@ -446,7 +390,10 @@ static void sigtermHandler(int sig) {
 	// todo
 }
 
-void setupSignalHandlers(void) { /* 设置信号处理函数 */
+/*
+ * 设置信号处理函数
+ */
+void setupSignalHandlers(void) {
 	struct sigaction act;
 	sigemptyset(&act.sa_mask);
 	act.sa_flags = 0;
@@ -458,10 +405,10 @@ void setupSignalHandlers(void) { /* 设置信号处理函数 */
 /* =========================== Server initialization ======================== */
 
 /* 
-* 释放旧的 AOF 重写缓存，并初始化一个新的 AOF 缓存。
-*
-* 这个函数也可以单纯地用于 AOF 重写缓存的初始化。
-*/
+ * 释放旧的 AOF 重写缓存，并初始化一个新的 AOF 缓存。
+ *
+ * 这个函数也可以单纯地用于 AOF 重写缓存的初始化。
+ */
 void aofRewriteBufferReset(void) {
 	/* 释放旧的缓存(链表) */
 	if (server.aof_rewrite_buf_blocks)
@@ -473,7 +420,7 @@ void aofRewriteBufferReset(void) {
 
 void createSharedObjects(void) {
 	int j;
-	/* 常用的回复 */
+	// 常用的回复
 	shared.crlf = createObject(REDIS_STRING, sdsnew("\r\n"));
 	shared.ok = createObject(REDIS_STRING, sdsnew("+OK\r\n"));
 	shared.err = createObject(REDIS_STRING, sdsnew("-ERR\r\n"));
@@ -488,7 +435,7 @@ void createSharedObjects(void) {
 	shared.queued = createObject(REDIS_STRING, sdsnew("+QUEUED\r\n"));
 	shared.emptyscan = createObject(REDIS_STRING, sdsnew("*2\r\n$1\r\n0\r\n*0\r\n"));
 
-	/* 常用错误回复 */
+	// 常用错误回复
 	shared.wrongtypeerr = createObject(REDIS_STRING, sdsnew(
 		"-WRONGTYPE Operation against a key holding the wrong kind of value\r\n"));
 	shared.nokeyerr = createObject(REDIS_STRING, sdsnew(
@@ -522,12 +469,12 @@ void createSharedObjects(void) {
 	shared.busykeyerr = createObject(REDIS_STRING, sdsnew(
 		"-BUSYKEY Target key name already exists.\r\n"));
 
-	/* 常用字符 */
+	// 常用字符
 	shared.space = createObject(REDIS_STRING, sdsnew(" "));
 	shared.colon = createObject(REDIS_STRING, sdsnew(":"));
 	shared.plus = createObject(REDIS_STRING, sdsnew("+"));
 
-	/* 常用select命令 */
+	// 常用select命令
 	for (j = 0; j < REDIS_SHARED_SELECT_CMDS; j++) {
 		char dictid_str[64];
 		int dictid_len;
@@ -539,19 +486,19 @@ void createSharedObjects(void) {
 				dictid_len, dictid_str));
 	}
 
-	/* 常用命令 */
+	// 常用命令
 	shared.del = createStringObject("DEL", 3);
 	shared.rpop = createStringObject("RPOP", 4);
 	shared.lpop = createStringObject("LPOP", 4);
 	shared.lpush = createStringObject("LPUSH", 5);
 
-	/* 常用整数 */
+	// 常用整数
 	for (j = 0; j < REDIS_SHARED_INTEGERS; j++) {
 		shared.integers[j] = createObject(REDIS_STRING, (void*)(long)j);
 		shared.integers[j]->encoding = REDIS_ENCODING_INT;
 	}
 
-	/* 常用长度bulk或者multi bulk回复 */
+	// 常用长度bulk或者multi bulk回复
 	for (j = 0; j < REDIS_SHARED_BULKHDR_LEN; j++) {
 		shared.mbulkhdr[j] = createObject(REDIS_STRING,
 			sdscatprintf(sdsempty(), "*%d\r\n", j));
@@ -564,15 +511,15 @@ void createSharedObjects(void) {
 void initServerConfig() {
 	int j;
 
-	/* 服务器状态 */
+	// 服务器状态
 	server.hz = REDIS_DEFAULT_HZ;
-	server.port = REDIS_SERVERPORT;
+	server.port = REDIS_SERVERPORT; // 6379号端口监听
 	server.tcp_backlog = REDIS_TCP_BACKLOG;
 	server.bindaddr_count = 0;
 
 	server.maxclients = REDIS_MAX_CLIENTS;
 	server.maxidletime = REDIS_MAXIDLETIME;
-	server.hash_max_ziplist_value = REDIS_HASH_MAX_ZIPLIST_VALUE;
+	server.hash_max_ziplist_value = REDIS_HASH_MAX_ZIPLIST_VALUE; // 压缩链表所能容忍的最大值
 	server.list_max_ziplist_value = REDIS_LIST_MAX_ZIPLIST_VALUE;
 	server.list_max_ziplist_entries = REDIS_LIST_MAX_ZIPLIST_ENTRIES;
 	server.set_max_intset_entries = REDIS_SET_MAX_INTSET_ENTRIES;
@@ -618,7 +565,7 @@ void initServerConfig() {
 	R_PosInf = 1.0 / R_Zero;
 	R_NegInf = -1.0 / R_Zero;
 	R_Nan = R_Zero / R_Zero;
-	populateCommandTable();  /* 安装命令处理函数 */
+	populateCommandTable();  // 安装命令处理函数
 
 	/* 如果AOF持久化功能已经打开,那么打开或创建一个 AOF 文件 */
 	if (server.aof_state == REDIS_AOF_ON) {
@@ -635,23 +582,26 @@ void initServerConfig() {
 	bioInit();
 }
 
+/*
+ * 在port端口监听
+ */
 int listenToPort(int port, int *fds, int *count) {
 	int j;
 
 	if (server.bindaddr_count == 0) server.bindaddr[0] = NULL;
 
 	for (j = 0; j < server.bindaddr_count || j == 0; j++) {
-		if (server.bindaddr[j] == NULL) { /* 原来的代码是,如果bindaddr[j] == NULL,那么就要绑定ipv4以及ipv6两种地址 */
-			/* 好吧,这里我估计要做一些简化工作,那就是支持ipv4即可 */
+		if (server.bindaddr[j] == NULL) {
+			// 这里做了一些简化工作,那就是仅支持ipv4即可
 			fds[*count] = anetTcpServer(server.neterr, port, NULL, server.tcp_backlog);
 			if (fds[*count] != ANET_ERR) {
-				anetNonBlock(NULL, fds[*count]); /* 设置为非阻塞 */
+				anetNonBlock(NULL, fds[*count]); // 设置为非阻塞
 				(*count)++;
 			}
 			if (*count) break;
 		}
 		else {
-			/* Bind IPv4 address. */
+			// Bind IPv4 address.
 			fds[*count] = anetTcpServer(server.neterr, port, server.bindaddr[j],
 				server.tcp_backlog);
 		}
@@ -665,7 +615,10 @@ int listenToPort(int port, int *fds, int *count) {
 	return REDIS_OK;
 }
 
-long long ustime(void) { /* 返回当前时间的us秒表示 */
+/* 
+ * 返回当前时间的us秒表示
+ */
+long long ustime(void) { 
 	struct timeval tv;
 	long long ust;
 	gettimeofday(&tv, NULL);
@@ -683,8 +636,10 @@ long long ustime(void) { /* 返回当前时间的us秒表示 */
 void exitFromChild(int retcode) {
 	_exit(retcode);
 }
+
+
 long long mstime(void) {
-	return ustime() / 1000; /* 1s = 1000 us */
+	return ustime() / 1000; // 1s = 1000 us
  }
 
 void updateCachedTime(void) {
@@ -694,15 +649,17 @@ void updateCachedTime(void) {
 
 /*================================== Shutdown =============================== */
 
-/* Close listening sockets. Also unlink the unix domain socket if
-* unlink_unix_socket is non-zero. */
+/* 
+ * Close listening sockets. Also unlink the unix domain socket if
+ * unlink_unix_socket is non-zero. 
+ */
 void closeListeningSockets(int unlink_unix_socket) {
 	int j;
 	for (j = 0; j < server.ipfd_count; j++) close(server.ipfd[j]);
 }
 
 int prepareForShutdown(int flags) {
-	/* 关闭监听套接字,这样在重启的时候会快一点 */
+	// 关闭监听套接字,这样在重启的时候会快一点
 	closeListeningSockets(1);
 	return REDIS_OK;
 }
@@ -717,8 +674,8 @@ void freeClientMultiState(redisClient *c) {
 
 
 /*
-* 释放客户端
-*/
+ * 释放客户端
+ */
 void freeClient(redisClient *c) {
 	listNode *ln;
 	if (server.current_client == c) {
@@ -728,17 +685,17 @@ void freeClient(redisClient *c) {
 	sdsfree(c->querybuf);
 	c->querybuf = NULL;
 
-	/* 关闭套接字,并从事件处理器中删除该套接字的事件 */
+	// 关闭套接字,并从事件处理器中删除该套接字的事件
 	if (c->fd != -1) {
 		aeDeleteFileEvent(server.el, c->fd, AE_READABLE);
 		aeDeleteFileEvent(server.el, c->fd, AE_WRITABLE);
 		close(c->fd);
 	}
 
-	listRelease(c->reply); /* 清空回复缓冲区 */
-	freeClientArgv(c); /* 清空命令参数 */
+	listRelease(c->reply); // 清空回复缓冲区
+	freeClientArgv(c); // 清空命令参数
 
-	/* 从服务器的客户端链表中删除自身 */
+	// 从服务器的客户端链表中删除自身
 	if (c->fd != -1) {
 		ln = listSearchKey(server.clients, c);
 		assert(ln != NULL);
@@ -747,18 +704,18 @@ void freeClient(redisClient *c) {
 
 	if (c->name) decrRefCount(c->name);
 	zfree(c->argv);
-	freeClientMultiState(c); /* 清除事务状态信息 */
+	freeClientMultiState(c); // 清除事务状态信息
 	zfree(c);
 }
 /* ======================= Cron: called every 100 ms ======================== */
 
 /* 
-* activeExpireCycle() 函数使用的检查键是否过期的辅佐函数。
-*
-* 如果 de 中的键已经过期，那么移除它，并返回 1 ，否则不做动作，并返回 0 。
-*
-* 参数 now 是毫秒格式的当前时间
-*/
+ * activeExpireCycle() 函数使用的检查键是否过期的辅佐函数。
+ *
+ * 如果 de 中的键已经过期，那么移除它，并返回 1 ，否则不做动作，并返回 0 。
+ *
+ * 参数 now 是毫秒格式的当前时间
+ */
 int activeExpireCycleTryExpire(redisDb *db, dictEntry *de, long long now) {
 	/* 获取键的过期时间 */
 	long long t = dictGetSignedIntegerVal(de);
@@ -780,28 +737,29 @@ int activeExpireCycleTryExpire(redisDb *db, dictEntry *de, long long now) {
 
 
 /* 
-* 函数尝试删除数据库中已经过期的键。
-* 当带有过期时间的键比较少时，函数运行得比较保守，
-* 如果带有过期时间的键比较多，那么函数会以更积极的方式来删除过期键，
-* 从而可能地释放被过期键占用的内存。
-*
-* 每次循环中被测试的数据库数目不会超过 REDIS_DBCRON_DBS_PER_CALL 。
-*
-* 如果 timelimit_exit 为真，那么说明还有更多删除工作要做，
-* 那么在 beforeSleep() 函数调用时，程序会再次执行这个函数。
-*
-* 过期循环的类型：
-*
-* 如果循环的类型为 ACTIVE_EXPIRE_CYCLE_FAST ，
-* 那么函数会以“快速过期”模式执行，
-* 执行的时间不会长过 EXPIRE_FAST_CYCLE_DURATION 毫秒，
-* 并且在 EXPIRE_FAST_CYCLE_DURATION 毫秒之内不会再重新执行。
-*
-* 如果循环的类型为 ACTIVE_EXPIRE_CYCLE_SLOW ，
-* 那么函数会以“正常过期”模式执行，
-* 函数的执行时限为 REDIS_HS 常量的一个百分比，
-* 这个百分比由 REDIS_EXPIRELOOKUPS_TIME_PERC 定义。
-*/
+ * 函数尝试删除数据库中已经过期的键。
+ * 当带有过期时间的键比较少时，函数运行得比较保守，
+ * 如果带有过期时间的键比较多，那么函数会以更积极的方式来删除过期键，
+ * 从而可能地释放被过期键占用的内存。
+ *
+ * 每次循环中被测试的数据库数目不会超过 REDIS_DBCRON_DBS_PER_CALL 。
+ *
+ * 如果 timelimit_exit 为真，那么说明还有更多删除工作要做，
+ * 那么在 beforeSleep() 函数调用时，程序会再次执行这个函数。
+ *
+ * 过期循环的类型：
+ *
+ * 如果循环的类型为 ACTIVE_EXPIRE_CYCLE_FAST ，
+ * 那么函数会以“快速过期”模式执行，
+ * 执行的时间不会长过 EXPIRE_FAST_CYCLE_DURATION 毫秒，
+ * 并且在 EXPIRE_FAST_CYCLE_DURATION 毫秒之内不会再重新执行。
+ *
+ * 如果循环的类型为 ACTIVE_EXPIRE_CYCLE_SLOW ，
+ * 那么函数会以“正常过期”模式执行，
+ * 函数的执行时限为 REDIS_HS 常量的一个百分比，
+ * 这个百分比由 REDIS_EXPIRELOOKUPS_TIME_PERC 定义。
+ */
+
 void activeExpireCycle(int type) {
 	/* 静态变量，用来累积函数连续执行时的数据 */
 	static unsigned int current_db = 0; /* Last DB tested. */
@@ -924,13 +882,16 @@ void databasesCron(void) {
 	activeExpireCycle(ACTIVE_EXPIRE_CYCLE_SLOW);
 }
 
-/* 检查客户端是否已经超时,如果超时就关闭客户端,并返回1 */
+
+/* 
+ * 检查客户端是否已经超时,如果超时就关闭客户端,并返回1 
+ */
 int clientsCronHandleTimeout(redisClient *c) {
-	time_t now = server.unixtime; /* 获取当前的时间 */
+	time_t now = server.unixtime; // 获取当前的时间
 	if (now - c->lastinteraction > server.maxidletime) {
-		/* 客户端最后一个与服务器通讯的时间已经超过了maxidletime */
+		// 客户端最后一个与服务器通讯的时间已经超过了maxidletime
 		mylog("%s", "Closing idle client");
-		freeClient(c); /* 关闭超时客户端 */
+		freeClient(c); // 关闭超时客户端 
 		return 1;
 	}
 	return 0;
@@ -938,14 +899,14 @@ int clientsCronHandleTimeout(redisClient *c) {
 
 void clientsCron(void) {
 	// todo
-	int numclients = listLength(server.clients); /* 客户端的数量 */
-	int iterations = numclients / (server.hz * 10); /* 要处理的客户端的数量 */
+	int numclients = listLength(server.clients); // 客户端的数量
+	int iterations = numclients / (server.hz * 10); // 要处理的客户端的数量
 
 	while (listLength(server.clients) && iterations--) {
 		redisClient *c;
 		listNode *head;
-		/* 翻转列表,然后取出表头元素,这样以来上一个被处理的客户端就会被放到表头
-		 * 另外,如果程序要删除当前客户端,那么只需要删除表头元素就可以了. */
+		// 翻转列表,然后取出表头元素,这样以来上一个被处理的客户端就会被放到表头
+		// 另外,如果程序要删除当前客户端,那么只需要删除表头元素就可以了.
 		listRotate(server.clients);
 		head = listFirst(server.clients);
 		c = listNodeValue(head);
@@ -955,16 +916,17 @@ void clientsCron(void) {
 
 int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
 	/* 会以一定的频率来运行这个函数 */
+
 	int j;
 	updateCachedTime();
-	/* 服务器进程收到 SIGTERM 消息,关闭服务器 */
+	// 服务器进程收到 SIGTERM 消息,关闭服务器
 	if (server.shutdown_asap) {
-		/* 尝试关闭服务器 */
+		// 尝试关闭服务器
 		if (prepareForShutdown(0) == REDIS_OK) exit(0);
-		/* 运行到这里说明关闭失败 */
+		// 运行到这里说明关闭失败
 		server.shutdown_asap = 0;
 	}
-	/* 检查客户端,关闭超时的客户端,并释放客户端多余的缓冲区 */
+	// 检查客户端,关闭超时的客户端,并释放客户端多余的缓冲区
 	clientsCron();
 	databasesCron(); /* 对数据库执行各种操作 */
 
@@ -1029,26 +991,28 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
 	server.cronloops++; /* 增加 loop 计数器 */
 	return 1000 / server.hz; /* 这个返回的值决定了下次什么时候再调用这个函数 */
 }
+
 void acceptTcpHandler(aeEventLoop *el, int fd, void *privdata, int mask);
+
 
 void initServer() {
 	int j;
-	/* 忽略SIGPIPE以及SIGHUP两个消息 */
+	// 忽略SIGPIPE以及SIGHUP两个消息
 	signal(SIGHUP, SIG_IGN);
 	signal(SIGPIPE, SIG_IGN);
 	setupSignalHandlers();
 
-	/* 初始化并创建数据结构 */
+	// 初始化并创建数据结构
 	server.clients = listCreate();
 	server.clients_to_close = listCreate();
 
-	/* 创建共享对象 */
+	// 创建共享对象
 	createSharedObjects();
 
 	server.el = aeCreateEventLoop(server.maxclients + REDIS_EVENTLOOP_FDSET_INCR);
-	server.db = zmalloc(sizeof(redisDb) * server.dbnum); /* 创建数据库 */
+	server.db = zmalloc(sizeof(redisDb) * server.dbnum); // 创建数据库
 
-	/* 打开 TCP 监听端口,用于等待客户端的命令请求 */
+	// 打开 TCP 监听端口,用于等待客户端的命令请求
 	if (server.port != 0 &&
 		listenToPort(server.port, server.ipfd, &server.ipfd_count) == REDIS_ERR) {
 		exit(1);
@@ -1066,7 +1030,7 @@ void initServer() {
 		exit(1);
 	}
 
-	/* 为 TCP 连接关联应答(accept)处理器,用于接收并应答客户端的connect()调用*/
+	// 为 TCP 连接关联应答(accept)处理器,用于接收并应答客户端的connect()调用
 	for (j = 0; j < server.ipfd_count; j++) {
 		if (aeCreateFileEvent(server.el, server.ipfd[j], AE_READABLE,
 			acceptTcpHandler, NULL) == AE_ERR) {
@@ -1127,4 +1091,3 @@ int main(int argc, char **argv) {
 	aeDeleteEventLoop(server.el);
 	return 0;
 }
-

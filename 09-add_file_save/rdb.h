@@ -106,6 +106,9 @@
 
 int rdbSaveType(rio *rdb, unsigned char type);
 void backgroundSaveDoneHandler(int exitcode, int bysignal);
-
+void startLoading(FILE *fp);
+void stopLoading(void);
+void loadingProgress(off_t pos);
+int rdbLoad(char *filename);
 #endif
 

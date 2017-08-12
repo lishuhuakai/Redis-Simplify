@@ -31,6 +31,18 @@
 
 #include "redis.h"
 #include "bio.h"
+#include "util.h"
+#include "db.h"
+#include "object.h"
+#include "t_string.h"
+#include "t_zset.h"
+#include "t_list.h"
+#include "t_hash.h"
+#include "t_set.h"
+#include "redis.h"
+#include "ziplist.h"
+#include "intset.h"
+#include "networking.h"
 
 /* 工作线程，斥互和条件变量 */
 static pthread_t bio_threads[REDIS_BIO_NUM_OPS];
