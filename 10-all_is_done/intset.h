@@ -1,7 +1,7 @@
 #ifndef __INTSET_H
 #define __INTSET_H
 #include <stdint.h>
-
+#include "redis.h"
 typedef struct intset {
 
 	/* 编码方式 */

@@ -1,23 +1,23 @@
 /* 
-* RIO 是一个可以面向流、可用于对多种不同的输入
-* （目前是文件和内存字节）进行编程的抽象。
-*
-* 比如说，RIO 可以同时对内存或文件中的 RDB 格式进行读写。
-*
-* 一个 RIO 对象提供以下方法：
-*
-*  read: read from stream.
-*        从流中读取
-*
-*  write: write to stream.
-*         写入到流中
-*
-*  tell: get the current offset.
-*        获取当前的偏移量
-*
-* 还可以通过设置 checksum 函数，计算写入或读取内容的校验和，
-* 或者为当前的校验和查询 rio 对象。
-*/
+ * RIO 是一个可以面向流、可用于对多种不同的输入
+ * （目前是文件和内存字节）进行编程的抽象。
+ *
+ * 比如说，RIO 可以同时对内存或文件中的 RDB 格式进行读写。
+ *
+ * 一个 RIO 对象提供以下方法：
+ *
+ *  read: read from stream.
+ *        从流中读取
+ *
+ *  write: write to stream.
+ *         写入到流中
+ *
+ *  tell: get the current offset.
+ *        获取当前的偏移量
+ *
+ * 还可以通过设置 checksum 函数，计算写入或读取内容的校验和，
+ * 或者为当前的校验和查询 rio 对象。
+ */
 #include "fmacros.h"
 #include <string.h>
 #include <stdio.h>
@@ -29,19 +29,19 @@
 
 
 /*
-* 从文件 r 中读取 len 字节到 buf 中。
-*
-* 返回值为读取的字节数。
-*/
+ * 从文件 r 中读取 len 字节到 buf 中。
+ *
+ * 返回值为读取的字节数。
+ */
 static size_t rioFileRead(rio *r, void *buf, size_t len) {
 	return fread(buf, len, 1, r->io.file.fp);
 }
 
 /*
-* 将长度为 len 的内容 buf 写入到文件 r 中。
-*
-* 成功返回 1 ，失败返回 0 。
-*/
+ * 将长度为 len 的内容 buf 写入到文件 r 中。
+ *
+ * 成功返回 1 ，失败返回 0 。
+ */
 static size_t rioFileWrite(rio *r, const void *buf, size_t len) {
 	size_t retval;
 
@@ -60,16 +60,16 @@ static size_t rioFileWrite(rio *r, const void *buf, size_t len) {
 }
 
 /* Returns read/write position in file.
-*
-* 返回文件当前的偏移量
-*/
+ *
+ * 返回文件当前的偏移量
+ */
 static off_t rioFileTell(rio *r) {
 	return ftello(r->io.file.fp);
 }
 
 /*
-* 流为文件时所使用的结构
-*/
+ * 流为文件时所使用的结构
+ */
 static const rio rioFileIO = {
 	/* 读函数 */
 	rioFileRead,
@@ -85,8 +85,8 @@ static const rio rioFileIO = {
 };
 
 /*
-* 初始化文件流
-*/
+ * 初始化文件流
+ */
 void rioInitWithFile(rio *r, FILE *fp) {
 	*r = rioFileIO;
 	r->io.file.fp = fp;
@@ -95,33 +95,33 @@ void rioInitWithFile(rio *r, FILE *fp) {
 }
 
 /*
-* 通用校验和计算函数
-*/
+ * 通用校验和计算函数
+ */
 void rioGenericUpdateChecksum(rio *r, const void *buf, size_t len) {
 	r->cksum = crc64(r->cksum, buf, len);
 }
 
 /*
-*
-* 每次通过 rio 写入 bytes 指定的字节数量时，执行一次自动的 fsync 。
-*
-* 默认情况下， bytes 被设为 0 ，表示不执行自动 fsync 。
-*
-* 这个函数是为了防止一次写入过多内容而设置的。
-*
-* 通过显示地、间隔性地调用 fsync ，
-* 可以将写入的 I/O 压力分担到多次 fsync 调用中。
-*/
+ *
+ * 每次通过 rio 写入 bytes 指定的字节数量时，执行一次自动的 fsync 。
+ *
+ * 默认情况下， bytes 被设为 0 ，表示不执行自动 fsync 。
+ *
+ * 这个函数是为了防止一次写入过多内容而设置的。
+ *
+ * 通过显示地、间隔性地调用 fsync ，
+ * 可以将写入的 I/O 压力分担到多次 fsync 调用中。
+ */
 void rioSetAutoSync(rio *r, off_t bytes) {
 	assert(r->read == rioFileIO.read);
 	r->io.file.autosync = bytes;
 }
 
 /*
-* 以带 '\r\n' 后缀的形式写入字符串表示的 count 到 RIO
-*
-* 成功返回写入的数量，失败返回 0 。
-*/
+ * 以带 '\r\n' 后缀的形式写入字符串表示的 count 到 RIO
+ *
+ * 成功返回写入的数量，失败返回 0 。
+ */
 size_t rioWriteBulkCount(rio *r, char prefix, int count) {
 	char cbuf[128];
 	int clen;
@@ -142,10 +142,10 @@ size_t rioWriteBulkCount(rio *r, char prefix, int count) {
 
 
 /* 
-* 以 "$<count>\r\n<payload>\r\n" 的形式写入二进制安全字符
-*
-* 例如 $3\r\nSET\r\n
-*/
+ * 以 "$<count>\r\n<payload>\r\n" 的形式写入二进制安全字符
+ *
+ * 例如 $3\r\nSET\r\n
+ */
 size_t rioWriteBulkString(rio *r, const char *buf, size_t len) {
 	size_t nwritten;
 
@@ -165,8 +165,8 @@ size_t rioWriteBulkString(rio *r, const char *buf, size_t len) {
 
 
 /* 
-* 以 "$<count>\r\n<payload>\r\n" 的格式写入 long long 值
-*/
+ * 以 "$<count>\r\n<payload>\r\n" 的格式写入 long long 值
+ */
 size_t rioWriteBulkLongLong(rio *r, long long l) {
 	char lbuf[32];
 	unsigned int llen;
@@ -180,8 +180,8 @@ size_t rioWriteBulkLongLong(rio *r, long long l) {
 }
 
 /* 
-* 以 "$<count>\r\n<payload>\r\n" 的格式写入 double 值
-*/
+ * 以 "$<count>\r\n<payload>\r\n" 的格式写入 double 值
+ */
 size_t rioWriteBulkDouble(rio *r, double d) {
 	char dbuf[128];
 	unsigned int dlen;

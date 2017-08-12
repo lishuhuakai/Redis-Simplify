@@ -1,11 +1,24 @@
 /* 这个文件主要用于实现事务的机制. */
 #include "redis.h"
+#include "multi.h"
+#include "networking.h"
+#include "ziplist.h"
+#include "t_list.h"
+#include "dict.h"
+#include "db.h"
+#include "ziplist.h"
+#include "t_string.h"
+#include "networking.h"
+#include "object.h"
+#include "util.h"
 
+extern struct sharedObjectsStruct shared;
+extern struct redisServer server;
 /* ================================ MULTI/EXEC ============================== */
 
 /* 
-* 初始化客户端的事务状态
-*/
+ * 初始化客户端的事务状态
+ */
 void initClientMultiState(redisClient *c) {
 
 	/* 命令队列 */
@@ -29,8 +42,8 @@ void multiCommand(redisClient *c) { /* 开启事务的功能 */
 }
 
 /* 
-* 释放所有事务状态相关的资源
-*/
+ * 释放所有事务状态相关的资源
+ */
 void freeClientMultiState(redisClient *c) {
 	int j;
 
@@ -52,8 +65,8 @@ void freeClientMultiState(redisClient *c) {
 }
 
 /* 
-* 将一个新命令添加到事务队列中
-*/
+ * 将一个新命令添加到事务队列中
+ */
 void queueMultiCommand(redisClient *c) {
 	multiCmd *mc;
 	int j;
@@ -85,10 +98,10 @@ typedef struct watchedKey {
 
 
 /* 
-* 取消客户端对所有键的监视。
-*
-* 清除客户端事务状态的任务由调用者执行。
-*/
+ * 取消客户端对所有键的监视。
+ *
+ * 清除客户端事务状态的任务由调用者执行。
+ */
 void unwatchAllKeys(redisClient *c) {
 	listIter li;
 	listNode *ln;
@@ -135,8 +148,8 @@ void discardTransaction(redisClient *c) {
 }
 
 /* 
-* 向 AOF 文件传播 MULTI 命令。
-*/
+ * 向 AOF 文件传播 MULTI 命令。
+ */
 void execCommandPropagateMulti(redisClient *c) {
 	robj *multistring = createStringObject("MULTI", 5);
 	propagate(server.multiCommand, c->db->id, &multistring, 1,
@@ -244,8 +257,8 @@ handle_monitor:
 }
 
 /*
-* 让客户端 c 监视给定的键 key
-*/
+ * 让客户端 c 监视给定的键 key
+ */
 void watchForKey(redisClient *c, robj *key) {
 	list *clients = NULL;
 	listIter li;
@@ -318,9 +331,9 @@ void watchForKey(redisClient *c, robj *key) {
 }
 
 /* 
-* “触碰”一个键，如果这个键正在被某个/某些客户端监视着，
-* 那么这个/这些客户端在执行 EXEC 时事务将失败。
-*/
+ * “触碰”一个键，如果这个键正在被某个/某些客户端监视着，
+ * 那么这个/这些客户端在执行 EXEC 时事务将失败。
+ */
 void touchWatchedKey(redisDb *db, robj *key) {
 	list *clients;
 	listIter li;
@@ -378,10 +391,10 @@ void discardCommand(redisClient *c) {
 }
 
 /* 
-* 将事务状态设为 DIRTY_EXEC ，让之后的 EXEC 命令失败。
-*
-* 每次在入队命令出错时调用
-*/
+ * 将事务状态设为 DIRTY_EXEC ，让之后的 EXEC 命令失败。
+ *
+ * 每次在入队命令出错时调用
+ */
 void flagTransaction(redisClient *c) {
 	if (c->flags & REDIS_MULTI)
 		c->flags |= REDIS_DIRTY_EXEC;

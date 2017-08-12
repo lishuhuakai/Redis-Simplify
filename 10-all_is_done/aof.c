@@ -1,16 +1,27 @@
 #include "rio.h"
-#include "aof.h"
 #include "util.h"
-#include <signal.h>
+#include "db.h"
+#include "object.h"
+#include "t_string.h"
+#include "t_zset.h"
+#include "t_list.h"
+#include "t_hash.h"
+#include "t_set.h"
+#include "redis.h"
+#include "ziplist.h"
+#include "intset.h"
+#include "networking.h"
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <sys/wait.h>
-#include "redis.h"
+#include "aof.h"
+#include "rdb.h"
 
 /*============================ Variable and Function Declaration ======================== */
+extern struct redisServer server;
 void expireCommand(redisClient *c);
 void pexpireCommand(redisClient *c);
 void setexCommand(redisClient *c);

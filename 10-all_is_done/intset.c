@@ -6,17 +6,17 @@
 #include "endianconv.h"
 
 /*
-* intset 的编码方式
-*/
+ * intset 的编码方式
+ */
 #define INTSET_ENC_INT16 (sizeof(int16_t))
 #define INTSET_ENC_INT32 (sizeof(int32_t))
 #define INTSET_ENC_INT64 (sizeof(int64_t))
 
 /* 
-* 返回适用于传入值 v 的编码方式
-*
-* T = O(1)
-*/
+ * 返回适用于传入值 v 的编码方式
+ *
+ * T = O(1)
+ */
 static uint8_t _intsetValueEncoding(int64_t v) {
 	if (v < INT32_MIN || v > INT32_MAX)
 		return INTSET_ENC_INT64;
@@ -27,10 +27,10 @@ static uint8_t _intsetValueEncoding(int64_t v) {
 }
 
 /* 
-* 根据给定的编码方式 enc ，返回集合的底层数组在 pos 索引上的元素。
-*
-* T = O(1)
-*/
+ * 根据给定的编码方式 enc ，返回集合的底层数组在 pos 索引上的元素。
+ *
+ * T = O(1)
+ */
 static int64_t _intsetGetEncoded(intset *is, int pos, uint8_t enc) {
 	int64_t v64;
 	int32_t v32;
@@ -59,19 +59,19 @@ static int64_t _intsetGetEncoded(intset *is, int pos, uint8_t enc) {
 }
 
 /* 
-* 根据集合的编码方式，返回底层数组在 pos 索引上的值
-*
-* T = O(1)
-*/
+ * 根据集合的编码方式，返回底层数组在 pos 索引上的值
+ *
+ * T = O(1)
+ */
 static int64_t _intsetGet(intset *is, int pos) {
 	return _intsetGetEncoded(is, pos, intrev32ifbe(is->encoding));
 }
 
 /* 
-* 根据集合的编码方式，将底层数组在 pos 位置上的值设为 value 。
-*
-* T = O(1)
-*/
+ * 根据集合的编码方式，将底层数组在 pos 位置上的值设为 value 。
+ *
+ * T = O(1)
+ */
 static void _intsetSet(intset *is, int pos, int64_t value) {
 
 	/* 取出集合的编码方式 */
@@ -97,10 +97,10 @@ static void _intsetSet(intset *is, int pos, int64_t value) {
 }
 
 /*
-* 创建并返回一个新的空整数集合
-*
-* T = O(1)
-*/
+ * 创建并返回一个新的空整数集合
+ *
+ * T = O(1)
+ */
 intset *intsetNew(void) {
 	/* 为整数集合结构分配空间 */
 	intset *is = zmalloc(sizeof(intset));
@@ -112,15 +112,15 @@ intset *intsetNew(void) {
 }
 
 /*
-* 调整整数集合的内存空间大小
-*
-* 如果调整后的大小要比集合原来的大小要大，
-* 那么集合中原有元素的值不会被改变。
-*
-* 返回值：调整大小后的整数集合
-*
-* T = O(N)
-*/
+ * 调整整数集合的内存空间大小
+ *
+ * 如果调整后的大小要比集合原来的大小要大，
+ * 那么集合中原有元素的值不会被改变。 
+ *
+ * 返回值：调整大小后的整数集合
+ *
+ * T = O(N)
+ */
 static intset *intsetResize(intset *is, uint32_t len) {
 
 	/* 计算数组的空间大小 */
@@ -135,15 +135,15 @@ static intset *intsetResize(intset *is, uint32_t len) {
 }
 
 /* 
-* 在集合 is 的底层数组中查找值 value 所在的索引。
-*
-* 成功找到 value 时，函数返回 1 ，并将 *pos 的值设为 value 所在的索引。
-*
-* 当在数组中没找到 value 时，返回 0 。
-* 并将 *pos 的值设为 value 可以插入到数组中的位置。
-*
-* T = O(log N)
-*/
+ * 在集合 is 的底层数组中查找值 value 所在的索引。
+ *
+ * 成功找到 value 时，函数返回 1 ，并将 *pos 的值设为 value 所在的索引。
+ *
+ * 当在数组中没找到 value 时，返回 0 。
+ * 并将 *pos 的值设为 value 可以插入到数组中的位置。
+ *
+ * T = O(log N)
+ */
 static uint8_t intsetSearch(intset *is, int64_t value, uint32_t *pos) {
 	int min = 0, max = intrev32ifbe(is->length) - 1, mid = -1;
 	int64_t cur = -1;
@@ -197,13 +197,13 @@ static uint8_t intsetSearch(intset *is, int64_t value, uint32_t *pos) {
 }
 
 /*
-* 根据值 value 所使用的编码方式，对整数集合的编码进行升级，
-* 并将值 value 添加到升级后的整数集合中。
-*
-* 返回值：添加新元素之后的整数集合
-*
-* T = O(N)
-*/
+ * 根据值 value 所使用的编码方式，对整数集合的编码进行升级，
+ * 并将值 value 添加到升级后的整数集合中。
+ *
+ * 返回值：添加新元素之后的整数集合
+ *
+ * T = O(N)
+ */
 static intset *intsetUpgradeAndAdd(intset *is, int64_t value) {
 
 	/* 当前的编码方式 */
@@ -265,36 +265,36 @@ static intset *intsetUpgradeAndAdd(intset *is, int64_t value) {
 }
 
 /*
-* 向前或先后移动指定索引范围内的数组元素
-*
-* 函数名中的 MoveTail 其实是一个有误导性的名字，
-* 这个函数可以向前或向后移动元素，
-* 而不仅仅是向后
-*
-* 在添加新元素到数组时，就需要进行向后移动，
-* 如果数组表示如下（？表示一个未设置新值的空间）：
-* | x | y | z | ? |
-*     |<----->|
-* 而新元素 n 的 pos 为 1 ，那么数组将移动 y 和 z 两个元素
-* | x | y | y | z |
-*         |<----->|
-* 接着就可以将新元素 n 设置到 pos 上了：
-* | x | n | y | z |
-*
-* 当从数组中删除元素时，就需要进行向前移动，
-* 如果数组表示如下，并且 b 为要删除的目标：
-* | a | b | c | d |
-*         |<----->|
-* 那么程序就会移动 b 后的所有元素向前一个元素的位置，
-* 从而覆盖 b 的数据：
-* | a | c | d | d |
-*     |<----->|
-* 最后，程序再从数组末尾删除一个元素的空间：
-* | a | c | d |
-* 这样就完成了删除操作。
-*
-* T = O(N)
-*/
+ * 向前或先后移动指定索引范围内的数组元素
+ *
+ * 函数名中的 MoveTail 其实是一个有误导性的名字，
+ * 这个函数可以向前或向后移动元素，
+ * 而不仅仅是向后
+ *
+ * 在添加新元素到数组时，就需要进行向后移动，
+ * 如果数组表示如下（？表示一个未设置新值的空间）：
+ * | x | y | z | ? |
+ *     |<----->|
+ * 而新元素 n 的 pos 为 1 ，那么数组将移动 y 和 z 两个元素
+ * | x | y | y | z |
+ *         |<----->|
+ * 接着就可以将新元素 n 设置到 pos 上了：
+ * | x | n | y | z |
+ *
+ * 当从数组中删除元素时，就需要进行向前移动，
+ * 如果数组表示如下，并且 b 为要删除的目标：
+ * | a | b | c | d |
+ *         |<----->|
+ * 那么程序就会移动 b 后的所有元素向前一个元素的位置，
+ * 从而覆盖 b 的数据：
+ * | a | c | d | d |
+ *     |<----->|
+ * 最后，程序再从数组末尾删除一个元素的空间：
+ * | a | c | d |
+ * 这样就完成了删除操作。
+ *
+ * T = O(N)
+ */
 static void intsetMoveTail(intset *is, uint32_t from, uint32_t to) {
 
 	void *src, *dst;
@@ -330,14 +330,14 @@ static void intsetMoveTail(intset *is, uint32_t from, uint32_t to) {
 }
 
 /* 
-* 尝试将元素 value 添加到整数集合中。
-*
-* *success 的值指示添加是否成功：
-* - 如果添加成功，那么将 *success 的值设为 1 。
-* - 因为元素已存在而造成添加失败时，将 *success 的值设为 0 。
-*
-* T = O(N)
-*/
+ * 尝试将元素 value 添加到整数集合中。
+ *
+ * *success 的值指示添加是否成功：
+ * - 如果添加成功，那么将 *success 的值设为 1 。
+ * - 因为元素已存在而造成添加失败时，将 *success 的值设为 0 。
+ *
+ * T = O(N)
+ */
 intset *intsetAdd(intset *is, int64_t value, uint8_t *success) {
 
 	/* 计算编码 value 所需的长度 */
@@ -396,14 +396,14 @@ intset *intsetAdd(intset *is, int64_t value, uint8_t *success) {
 }
 
 /*
-* 从整数集合中删除值 value 。
-*
-* *success 的值指示删除是否成功：
-* - 因值不存在而造成删除失败时该值为 0 。
-* - 删除成功时该值为 1 。
-*
-* T = O(N)
-*/
+ * 从整数集合中删除值 value 。
+ *
+ * *success 的值指示删除是否成功：
+ * - 因值不存在而造成删除失败时该值为 0 。
+ * - 删除成功时该值为 1 。
+ *
+ * T = O(N)
+ */
 intset *intsetRemove(intset *is, int64_t value, int *success) {
 
 	/* 计算 value 的编码方式 */
@@ -444,12 +444,12 @@ intset *intsetRemove(intset *is, int64_t value, int *success) {
 }
 
 /* 
-* 检查给定值 value 是否集合中的元素。
-*
-* 是返回 1 ，不是返回 0 。
-*
-* T = O(log N)
-*/
+ * 检查给定值 value 是否集合中的元素。
+ *
+ * 是返回 1 ，不是返回 0 。
+ *
+ * T = O(log N)
+ */
 uint8_t intsetFind(intset *is, int64_t value) {
 
 	/* 计算 value 的编码 */
@@ -462,12 +462,12 @@ uint8_t intsetFind(intset *is, int64_t value) {
 }
 
 /*
-* 从整数集合中随机返回一个元素
-*
-* 只能在集合非空时使用
-*
-* T = O(1)
-*/
+ * 从整数集合中随机返回一个元素
+ *
+ * 只能在集合非空时使用
+ *
+ * T = O(1)
+ */
 int64_t intsetRandom(intset *is) {
 	/* intrev32ifbe(is->length) 取出集合的元素数量
 	 * 而 rand() % intrev32ifbe(is->length) 根据元素数量计算一个随机索引
@@ -476,14 +476,14 @@ int64_t intsetRandom(intset *is) {
 }
 
 /*
-* 取出集合底层数组指定位置中的值，并将它保存到 value 指针中。
-*
-* 如果 pos 没超出数组的索引范围，那么返回 1 ，如果超出索引，那么返回 0 。
-*
-* p.s. 上面原文的文档说这个函数用于设置值，这是错误的。
-*
-* T = O(1)
-*/
+ * 取出集合底层数组指定位置中的值，并将它保存到 value 指针中。
+ *
+ * 如果 pos 没超出数组的索引范围，那么返回 1 ，如果超出索引，那么返回 0 。
+ *
+ * p.s. 上面原文的文档说这个函数用于设置值，这是错误的。
+ *
+ * T = O(1)
+ */
 uint8_t intsetGet(intset *is, uint32_t pos, int64_t *value) {
 
 	/* 检查 pos 是否符合数组的范围 */
@@ -501,20 +501,20 @@ uint8_t intsetGet(intset *is, uint32_t pos, int64_t *value) {
 }
 
 /* 
-* 返回整数集合现有的元素个数
-*
-* T = O(1)
-*/
+ * 返回整数集合现有的元素个数
+ *
+ * T = O(1)
+ */
 uint32_t intsetLen(intset *is) {
 	return intrev32ifbe(is->length);
 }
 
 /*
-* 返回整数集合现在占用的字节总数量
-* 这个数量包括整数集合的结构大小，以及整数集合所有元素的总大小
-*
-* T = O(1)
-*/
+ * 返回整数集合现在占用的字节总数量
+ * 这个数量包括整数集合的结构大小，以及整数集合所有元素的总大小
+ *
+ * T = O(1)
+ */
 size_t intsetBlobLen(intset *is) {
 	return sizeof(intset) + intrev32ifbe(is->length)*intrev32ifbe(is->encoding);
 }
