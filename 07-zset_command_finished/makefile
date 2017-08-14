@@ -1,5 +1,5 @@
 CC	:= gcc
-CXXFLAGS:= -w -std=gnu99 -ggdb -ffunction-sections -c
+CFLAGS:= -w -std=gnu99 -ggdb -ffunction-sections 
 LFLAGS	:= -lpthread
 BINS 	:= redis
 SRCS	:= $(wildcard *.c) # 当前目录下的所有的.c文件 
@@ -13,8 +13,8 @@ BINOS	= $(addsuffix .o, $(BINS))
 TEMP_OBJ= $(filter-out $(BINOS), $^)
 
 $(BINS):$(OBJS) 
-	@echo "正在链接程序......"; \
-	$(foreach BIN, $@, $(CC) $(TEMP_OBJ) $(BIN).o $(LFLAGS) -o $(BIN));   
+	@echo "正在链接程序......";
+	$(foreach BIN, $@, $(CC) $(CFLAGS) $(TEMP_OBJ) $(BIN).o $(LFLAGS) -o $(BIN));   
 
 %.d:%.c
 	@echo "正在生成依赖中......"; \
